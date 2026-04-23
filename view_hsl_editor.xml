@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#CC000000"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="HSL Selectivo"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:textSize="16sp"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Selector de color -->
+    <RadioGroup
+        android:id="@+id/rgColorRange"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <RadioButton
+            android:id="@+id/rbRed"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:buttonTint="#FF0000"
+            android:checked="true"/>
+
+        <RadioButton
+            android:id="@+id/rbOrange"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:buttonTint="#FF8800"/>
+
+        <RadioButton
+            android:id="@+id/rbYellow"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:buttonTint="#FFFF00"/>
+
+        <RadioButton
+            android:id="@+id/rbGreen"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:buttonTint="#00FF00"/>
+
+        <RadioButton
+            android:id="@+id/rbCyan"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:buttonTint="#00FFFF"/>
+
+        <RadioButton
+            android:id="@+id/rbBlue"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:buttonTint="#0000FF"/>
+
+        <RadioButton
+            android:id="@+id/rbPurple"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:buttonTint="#FF00FF"/>
+    </RadioGroup>
+
+    <!-- Preview del color -->
+    <View
+        android:id="@+id/colorPreview"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:background="#FF0000"
+        android:layout_marginVertical="8dp"/>
+
+    <!-- Hue -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        
+        <TextView
+            android:layout_width="80dp"
+            android:layout_height="wrap_content"
+            android:text="Matiz"
+            android:textColor="#FFFFFF"/>
+            
+        <SeekBar
+            android:id="@+id/sbHslHue"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="100"
+            android:progress="50"/>
+            
+        <TextView
+            android:id="@+id/tvHueValue"
+            android:layout_width="60dp"
+            android:layout_height="wrap_content"
+            android:text="0°"
+            android:textColor="#FFFFFF"
+            android:gravity="end"/>
+    </LinearLayout>
+
+    <!-- Saturation -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="8dp">
+        
+        <TextView
+            android:layout_width="80dp"
+            android:layout_height="wrap_content"
+            android:text="Saturación"
+            android:textColor="#FFFFFF"/>
+            
+        <SeekBar
+            android:id="@+id/sbHslSaturation"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="100"
+            android:progress="50"/>
+            
+        <TextView
+            android:id="@+id/tvSatValue"
+            android:layout_width="60dp"
+            android:layout_height="wrap_content"
+            android:text="100%"
+            android:textColor="#FFFFFF"
+            android:gravity="end"/>
+    </LinearLayout>
+
+    <!-- Lightness -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="8dp">
+        
+        <TextView
+            android:layout_width="80dp"
+            android:layout_height="wrap_content"
+            android:text="Luminosidad"
+            android:textColor="#FFFFFF"/>
+            
+        <SeekBar
+            android:id="@+id/sbHslLightness"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="100"
+            android:progress="50"/>
+            
+        <TextView
+            android:id="@+id/tvLightValue"
+            android:layout_width="60dp"
+            android:layout_height="wrap_content"
+            android:text="100%"
+            android:textColor="#FFFFFF"
+            android:gravity="end"/>
+    </LinearLayout>
+
+</LinearLayout>
+

@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#CC000000"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- ISO -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="60dp"
+            android:layout_height="wrap_content"
+            android:text="ISO"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <SeekBar
+            android:id="@+id/sbIso"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="100" />
+
+        <TextView
+            android:id="@+id/tvIsoValue"
+            android:layout_width="70dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:text="ISO 100"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+    <!-- Shutter Speed -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="60dp"
+            android:layout_height="wrap_content"
+            android:text="S"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <SeekBar
+            android:id="@+id/sbShutter"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="100" />
+
+        <TextView
+            android:id="@+id/tvShutterValue"
+            android:layout_width="70dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:text="1/125"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+    <!-- Focus -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <Switch
+            android:id="@+id/switchManualFocus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="MF"
+            android:textColor="#FFFFFF" />
+
+        <SeekBar
+            android:id="@+id/sbFocus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:max="100" />
+
+        <TextView
+            android:id="@+id/tvFocusValue"
+            android:layout_width="70dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:text="AF"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+    <!-- White Balance -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="60dp"
+            android:layout_height="wrap_content"
+            android:text="WB"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <SeekBar
+            android:id="@+id/sbWb"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="100" />
+
+        <TextView
+            android:id="@+id/tvWbValue"
+            android:layout_width="70dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:text="5500K"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+</LinearLayout>
+

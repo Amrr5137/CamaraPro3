@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Nitidez"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"/>
+    <SeekBar
+        android:id="@+id/sbSharpness"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="100"
+        android:progress="0"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Claridad"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:layout_marginTop="16dp"/>
+    <SeekBar
+        android:id="@+id/sbClarity"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="100"
+        android:progress="0"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Reducción de Ruido"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:layout_marginTop="16dp"/>
+    <SeekBar
+        android:id="@+id/sbDenoise"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="100"
+        android:progress="0"/>
+
+</LinearLayout>
+
