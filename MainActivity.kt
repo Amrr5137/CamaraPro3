@@ -27,6 +27,7 @@ import android.util.Size
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
+import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -42,6 +43,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.miappcamarapro3.camara.HdrBracketingCapture
 import com.example.miappcamarapro3.camara.ManualModeController
@@ -51,6 +56,7 @@ import com.example.miappcamarapro3.filters.AdvancedFilterProcessor
 import com.example.miappcamarapro3.filters.FilterProcessor
 import com.example.miappcamarapro3.filters.FilterType
 import com.example.miappcamarapro3.filters.GpuFilterRenderer
+import com.example.miappcamarapro3.filters.LightLeaksProcessor
 import com.example.miappcamarapro3.ui.AdjustmentPanelView
 import com.example.miappcamarapro3.ui.CameraGLSurfaceView
 import com.example.miappcamarapro3.ui.CurveEditorView
@@ -99,6 +105,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnCapture: ImageButton
     private lateinit var btnMultiCapture: ImageButton
     private lateinit var btnGallery: ImageButton
+    private lateinit var btnFlash: Button
 
     private lateinit var advancedEditingPanel: LinearLayout
     private lateinit var editingPreview: ImageView
@@ -113,6 +120,8 @@ class MainActivity : AppCompatActivity() {
     private var currentCameraId: String = "0"
     private var availableCameras = listOf<CameraInfo>()
     private var currentMode = CameraMode.AUTO
+    private var isFlashSupported = false
+    private var currentFlashMode = CaptureRequest.FLASH_MODE_OFF
 
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
@@ -142,13 +151,25 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Configurar pantalla completa antes de setContentView
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } catch (e: Exception) {
+            Log.e("MultiCameraPro", "Error setting up window flags", e)
+        }
+
         setContentView(R.layout.activity_main)
 
         initializeViews()
         initializeAdvancedEditing()
         
         // Asegurar que los contenedores de controles estén al frente de todo
-        findViewById<HorizontalScrollView>(R.id.modeContainer)?.bringToFront()
+        findViewById<LinearLayout>(R.id.topBarLayout)?.bringToFront()
         findViewById<HorizontalScrollView>(R.id.filterButtonsScroll)?.bringToFront()
         findViewById<LinearLayout>(R.id.bottomControls)?.bringToFront()
         findViewById<TextView>(R.id.tvCameraInfo)?.bringToFront()
@@ -156,8 +177,40 @@ class MainActivity : AppCompatActivity() {
         checkPermissions()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            // Usamos un try-catch para evitar cualquier crash por el insets controller
+            try {
+                val currentWindow = this.window
+                if (currentWindow != null) {
+                    val controller = WindowCompat.getInsetsController(currentWindow, currentWindow.decorView)
+                    controller.hide(WindowInsetsCompat.Type.systemBars())
+                    controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            } catch (e: Exception) {
+                Log.e("MultiCameraPro", "Error hiding system UI", e)
+            }
+        }
+    }
+
     private fun initializeViews() {
         Log.d(TAG, "Initializing views...")
+
+        // Aplicar padding para evitar el notch/barra de estado en los controles superiores
+        val topBarLayout = findViewById<View>(R.id.topBarLayout)
+        topBarLayout?.let { layout ->
+            ViewCompat.setOnApplyWindowInsetsListener(layout) { v, insets ->
+                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                val cutout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    insets.displayCutout?.safeInsetTop ?: 0
+                } else 0
+                
+                val finalTopPadding = maxOf(bars.top, cutout)
+                v.setPadding(v.paddingLeft, finalTopPadding, v.paddingRight, v.paddingBottom)
+                insets
+            }
+        }
 
         // Referencias
         glSurfaceView = findViewById(R.id.glSurfaceView)
@@ -174,6 +227,7 @@ class MainActivity : AppCompatActivity() {
         btnCapture = findViewById(R.id.btnCapture)
         btnMultiCapture = findViewById(R.id.btnMultiCapture)
         btnGallery = findViewById(R.id.btnGallery)
+        btnFlash = findViewById(R.id.btnFlash)
 
         Log.d(TAG, "Views initialized, setting up listeners...")
 
@@ -214,6 +268,10 @@ class MainActivity : AppCompatActivity() {
         btnMultiCapture.setOnClickListener {
             Log.d(TAG, "Multi capture button clicked")
             captureAllCameras()
+        }
+
+        btnFlash.setOnClickListener {
+            toggleFlash()
         }
 
         // Filtros GPU
@@ -257,11 +315,67 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Asegurar que los contenedores de controles estén al frente
-        findViewById<HorizontalScrollView>(R.id.modeContainer)?.bringToFront()
+        findViewById<LinearLayout>(R.id.topBarLayout)?.bringToFront()
         findViewById<HorizontalScrollView>(R.id.filterButtonsScroll)?.bringToFront()
         findViewById<LinearLayout>(R.id.bottomControls)?.bringToFront()
 
         Log.d(TAG, "View initialization complete")
+    }
+
+    private fun toggleFlash() {
+        if (!isFlashSupported) {
+            Toast.makeText(this, "Flash no soportado en esta cámara", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        currentFlashMode = when (currentFlashMode) {
+            CaptureRequest.FLASH_MODE_OFF -> CaptureRequest.FLASH_MODE_TORCH
+            CaptureRequest.FLASH_MODE_TORCH -> CaptureRequest.FLASH_MODE_OFF
+            else -> CaptureRequest.FLASH_MODE_OFF
+        }
+
+        updateFlashButtonUI()
+        updateCaptureRequest()
+    }
+
+    private fun updateFlashButtonUI() {
+        btnFlash.text = if (currentFlashMode == CaptureRequest.FLASH_MODE_TORCH) "LUZ ON" else "LUZ OFF"
+        btnFlash.backgroundTintList = android.content.res.ColorStateList.valueOf(
+            if (currentFlashMode == CaptureRequest.FLASH_MODE_TORCH) 0xFFFFCC00.toInt() else 0xFFFF0000.toInt() // ROJO si está apagado para debug
+        )
+        btnFlash.setTextColor(if (currentFlashMode == CaptureRequest.FLASH_MODE_TORCH) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
+    }
+
+    private fun updateCaptureRequest() {
+        when (currentMode) {
+            CameraMode.MANUAL -> {
+                manualController?.setFlashMode(currentFlashMode)
+            }
+            CameraMode.RAW -> {
+                previewSurface?.let { rawCaptureManager?.setFlashMode(currentFlashMode, it) }
+            }
+            CameraMode.HDR -> {
+                previewSurface?.let { hdrCaptureManager?.setFlashMode(currentFlashMode, it) }
+            }
+            else -> {
+                val session = captureSession ?: return
+                val device = cameraDevice ?: return
+                val surface = previewSurface ?: return
+
+                try {
+                    val requestBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                        addTarget(surface)
+                        set(CaptureRequest.FLASH_MODE, currentFlashMode)
+                        if (currentFlashMode == CaptureRequest.FLASH_MODE_TORCH) {
+                            set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                        }
+                    }
+                    session.setRepeatingRequest(requestBuilder.build(), null, backgroundHandler)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating flash request", e)
+                }
+            }
+        }
     }
 
     private fun setupGpuPreview() {
@@ -600,6 +714,13 @@ class MainActivity : AppCompatActivity() {
                     val characteristics = cameraManager.getCameraCharacteristics(cameraId)
                     lastCameraId = cameraId
 
+                    // Verificar soporte de flash
+                    isFlashSupported = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) ?: false
+                    currentFlashMode = CaptureRequest.FLASH_MODE_OFF
+                    withContext(Dispatchers.Main) {
+                        updateFlashButtonUI()
+                    }
+
                     suspendCancellableCoroutine { cont ->
                         try {
                             if (ContextCompat.checkSelfPermission(
@@ -733,6 +854,7 @@ class MainActivity : AppCompatActivity() {
             ?: Size(4032, 3024)
 
         rawCaptureManager = RawCaptureManager(device, backgroundHandler)
+        rawCaptureManager?.currentFlashMode = currentFlashMode
 
         val surface = getPreviewSurface(characteristics) ?: return
 
@@ -766,6 +888,7 @@ class MainActivity : AppCompatActivity() {
         val surface = getPreviewSurface(characteristics) ?: return
 
         hdrCaptureManager = HdrBracketingCapture(device, characteristics, backgroundHandler)
+        hdrCaptureManager?.currentFlashMode = currentFlashMode
         hdrCaptureManager?.setupSession(surface, captureSize)
         Log.d(TAG, "Modo HDR configurado con éxito")
     }
@@ -796,6 +919,7 @@ class MainActivity : AppCompatActivity() {
         val surface = getPreviewSurface(characteristics) ?: return
 
         manualController = ManualModeController(device, characteristics, backgroundHandler)
+        manualController?.currentFlashMode = currentFlashMode
         manualController?.setupManualSession(surface, imageReader!!.surface)
 
         // Configurar rangos en UI
@@ -873,6 +997,7 @@ class MainActivity : AppCompatActivity() {
                                         device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                                             .apply {
                                                 addTarget(surface)
+                                                set(CaptureRequest.FLASH_MODE, currentFlashMode)
                                             }
                                     session.setRepeatingRequest(
                                         requestBuilder.build(),
@@ -913,6 +1038,7 @@ class MainActivity : AppCompatActivity() {
                                         device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                                             .apply {
                                                 addTarget(surface)
+                                                set(CaptureRequest.FLASH_MODE, currentFlashMode)
                                             }.build()
                                     session.setRepeatingRequest(request, null, backgroundHandler)
                                     Log.d(TAG, "Preview Auto (Legacy) iniciado")
@@ -1219,13 +1345,15 @@ class MainActivity : AppCompatActivity() {
 
         btnApplyEdits.setOnClickListener {
             // Logic to save the current editing result
-            currentEditingBitmap?.let {
+            lastEditingResult?.let {
                 lifecycleScope.launch(Dispatchers.IO) {
                     saveImage(bitmapToBytes(it), "EDITED_${System.currentTimeMillis()}.jpg")
                     withContext(Dispatchers.Main) {
                         advancedEditingPanel.visibility = View.GONE
                     }
                 }
+            } ?: run {
+                Toast.makeText(this, "No hay cambios para guardar", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -1287,7 +1415,9 @@ class MainActivity : AppCompatActivity() {
             val baseBitmap = currentEditingBitmap ?: return@launch
 
             try {
-                var result = baseBitmap
+                // IMPORTANTÍSIMO: Crear una COPIA del bitmap base antes de aplicar ajustes.
+                // De lo contrario, estamos modificando el original una y otra vez (o nada si falla la lógica).
+                var result = baseBitmap.copy(Bitmap.Config.ARGB_8888, true)
                 val bitmapsToRecycle = mutableListOf<Bitmap>()
 
                 // Aplicar exposición
@@ -1304,7 +1434,10 @@ class MainActivity : AppCompatActivity() {
                         whites = currentWhites,
                         blacks = currentBlacks
                     )
-                    result = next
+                    if (next != result) {
+                        bitmapsToRecycle.add(result)
+                        result = next
+                    }
                 }
 
                 // Aplicar color
@@ -1318,8 +1451,10 @@ class MainActivity : AppCompatActivity() {
                         vibrance = currentVibrance,
                         saturation = currentSaturation
                     )
-                    if (result != baseBitmap) bitmapsToRecycle.add(result)
-                    result = next
+                    if (next != result) {
+                        bitmapsToRecycle.add(result)
+                        result = next
+                    }
                 }
 
                 // Aplicar curvas
@@ -1328,8 +1463,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 if (curve != null) {
                     val next = advancedFilterProcessor.applyToneCurves(result, curve)
-                    if (result != baseBitmap) bitmapsToRecycle.add(result)
-                    result = next
+                    if (next != result) {
+                        bitmapsToRecycle.add(result)
+                        result = next
+                    }
                 }
 
                 // Aplicar detalle
@@ -1340,8 +1477,10 @@ class MainActivity : AppCompatActivity() {
                         clarity = currentClarity,
                         denoise = currentDenoise
                     )
-                    if (result != baseBitmap) bitmapsToRecycle.add(result)
-                    result = next
+                    if (next != result) {
+                        bitmapsToRecycle.add(result)
+                        result = next
+                    }
                 }
 
                 // Actualizar histograma
@@ -1352,7 +1491,13 @@ class MainActivity : AppCompatActivity() {
                     updateHistogramView(histogram)
 
                     // Reciclar bitmaps intermedios después de mostrar el final
-                    bitmapsToRecycle.forEach { it.recycle() }
+                    bitmapsToRecycle.forEach { 
+                        if (it != baseBitmap && it != result && !it.isRecycled) it.recycle() 
+                    }
+                    
+                    // Nota: 'result' NO se recicla porque es lo que está viendo el usuario ahora.
+                    // Se reciclará en la próxima llamada de applyEditingChanges o al cerrar el panel.
+                    lastEditingResult = result 
                 }
             } catch (e: OutOfMemoryError) {
                 Log.e(TAG, "OOM en edición", e)
@@ -1362,6 +1507,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private var lastEditingResult: Bitmap? = null
 
     private fun updateHistogramView(data: HistogramGenerator.HistogramData) {
         val w = histogramView.width
@@ -1381,27 +1528,28 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.Default) {
             val result = when (type) {
                 "LIGHT_LEAKS" -> {
-                    val processor = com.example.miappcamarapro3.filters.LightLeaksProcessor()
-                    val params = com.example.miappcamarapro3.filters.LightLeaksProcessor.LightLeakParams(
-                        type = com.example.miappcamarapro3.filters.LightLeaksProcessor.LeakType.ORANGE_STREAK,
-                        intensity = 0.5f
+                    val processor = LightLeaksProcessor()
+                    val params = LightLeaksProcessor.LightLeakParams(
+                        type = LightLeaksProcessor.LeakType.ORANGE_STREAK,
+                        intensity = 0.8f
                     )
                     processor.applyLightLeak(baseBitmap, params)
                 }
                 "ANALOG_FILM" -> {
-                    val processor = com.example.miappcamarapro3.filters.LightLeaksProcessor()
-                    processor.applyAnalogFilmEffect(baseBitmap, 0.6f)
+                    val processor = LightLeaksProcessor()
+                    processor.applyAnalogFilmEffect(baseBitmap, 0.8f)
                 }
                 "BOKEH" -> {
-                    advancedFilterProcessor.applyBokeh(baseBitmap, blurRadius = 20f)
+                    advancedFilterProcessor.applyBokeh(baseBitmap, blurRadius = 30f)
                 }
                 else -> baseBitmap
             }
 
             withContext(Dispatchers.Main) {
+                // IMPORTANTE: Actualizar el bitmap base de edición para que los ajustes posteriores
+                // (brillo, contraste, etc.) se apliquen SOBRE el filtro especial.
                 currentEditingBitmap = result
-                editingPreview.setImageBitmap(result)
-                applyEditingChanges() // Recalcular con los ajustes actuales encima
+                applyEditingChanges()
             }
         }
     }

@@ -123,7 +123,7 @@ class FilterProcessor() {
             val amplified = (brightness * 2.0).toInt().coerceIn(0, 255)
             val green = (amplified * 0.9).toInt().coerceIn(0, 255)
 
-            val noise = (Math.random() * 10 - 5).toInt()
+            val noise = (kotlin.random.Random.nextDouble() * 10 - 5).toInt()
             val finalGreen = (green + noise).coerceIn(0, 255)
 
             pixels[i] = Color.rgb(0, finalGreen, 0)
@@ -220,8 +220,8 @@ class FilterProcessor() {
         var yi: Int
         var yw: Int
 
-        val vmin = IntArray(Math.max(width, height))
-        val vmax = IntArray(Math.max(width, height))
+        val vmin = IntArray(maxOf(width, height))
+        val vmax = IntArray(maxOf(width, height))
 
         val dv = IntArray(256 * div)
         for (i in 0 until 256 * div) {
@@ -236,7 +236,7 @@ class FilterProcessor() {
             gsum = 0
             bsum = 0
             for (i in -radius..radius) {
-                p = pixels[yi + Math.min(wm, Math.max(i, 0))]
+                p = pixels[yi + minOf(wm, maxOf(i, 0))]
                 rsum += (p and 0xff0000) shr 16
                 gsum += (p and 0x00ff00) shr 8
                 bsum += (p and 0x0000ff)
@@ -247,8 +247,8 @@ class FilterProcessor() {
                 b[yi] = dv[bsum]
 
                 if (y == 0) {
-                    vmin[x] = Math.min(x + radius + 1, wm)
-                    vmax[x] = Math.max(x - radius, 0)
+                    vmin[x] = minOf(x + radius + 1, wm)
+                    vmax[x] = maxOf(x - radius, 0)
                 }
                 val p1 = pixels[yw + vmin[x]]
                 val p2 = pixels[yw + vmax[x]]
@@ -267,7 +267,7 @@ class FilterProcessor() {
             bsum = 0
             yp = -radius * width
             for (i in -radius..radius) {
-                yi = Math.max(0, yp) + x
+                yi = maxOf(0, yp) + x
                 rsum += r[yi]
                 gsum += g[yi]
                 bsum += b[yi]
@@ -278,8 +278,8 @@ class FilterProcessor() {
                 pixels[yi] =
                     (0xff000000.toInt() or (dv[rsum] shl 16) or (dv[gsum] shl 8) or dv[bsum])
                 if (x == 0) {
-                    vmin[y] = Math.min(y + radius + 1, hm) * width
-                    vmax[y] = Math.max(y - radius, 0) * width
+                    vmin[y] = minOf(y + radius + 1, hm) * width
+                    vmax[y] = maxOf(y - radius, 0) * width
                 }
                 val p1 = x + vmin[y]
                 val p2 = x + vmax[y]

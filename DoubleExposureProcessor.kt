@@ -14,6 +14,7 @@ import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withSave
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 /**
  * Procesador de efecto Double Exposure (doble exposición)
@@ -334,7 +335,7 @@ class DoubleExposureProcessor {
                 val gx = luminance(pixels[idx - 1]) - luminance(pixels[idx + 1])
                 val gy = luminance(pixels[idx - width]) - luminance(pixels[idx + width])
 
-                val magnitude = min(255, (kotlin.math.sqrt((gx * gx + gy * gy).toDouble())).toInt())
+                val magnitude = min(255, sqrt((gx * gx + gy * gy).toDouble()).toInt())
                 edges[idx] = Color.alpha(magnitude)
             }
         }

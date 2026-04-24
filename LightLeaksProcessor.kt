@@ -95,7 +95,7 @@ class LightLeaksProcessor {
         }
 
         val (startX, startY) = getPositionCoordinates(params.position, width, height)
-        val angleRad = Math.toRadians(params.angle.toDouble())
+        val angleRad = params.angle.toDouble() * (PI / 180.0)
         val length = maxOf(width, height) * params.size * 2
 
         // Gradiente lineal para la raya
@@ -276,7 +276,7 @@ class LightLeaksProcessor {
         params: LightLeakParams
     ) {
         val (startX, startY) = getPositionCoordinates(params.position, width, height)
-        val angleRad = Math.toRadians(params.angle.toDouble())
+        val angleRad = params.angle.toDouble() * (PI / 180.0)
         val length = maxOf(width, height) * params.size * 2
 
         val colors = intArrayOf(

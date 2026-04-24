@@ -33,12 +33,12 @@
         android:layout_marginTop="60dp"
         android:layout_marginEnd="8dp"
         android:background="#66000000"
+        android:elevation="5dp"
         android:paddingHorizontal="8dp"
         android:paddingVertical="4dp"
         android:text="ISO 100 1/125 AF"
         android:textColor="#FFFFFF"
-        android:textSize="12sp"
-        android:elevation="5dp" />
+        android:textSize="12sp" />
 
     <!-- PANEL DE FILTROS GPU -->
     <HorizontalScrollView
@@ -56,14 +56,47 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:padding="8dp">
-            <Button android:id="@+id/btnFilterNormal" android:text="Normal" style="@style/GpuFilterButton"/>
-            <Button android:id="@+id/btnFilterBW" android:text="B&amp;N" style="@style/GpuFilterButton"/>
-            <Button android:id="@+id/btnFilterSepia" android:text="Sepia" style="@style/GpuFilterButton"/>
-            <Button android:id="@+id/btnFilterNegative" android:text="Neg" style="@style/GpuFilterButton"/>
-            <Button android:id="@+id/btnFilterIR" android:text="IR" style="@style/GpuFilterButton"/>
-            <Button android:id="@+id/btnFilterNight" android:text="NVG" style="@style/GpuFilterButton"/>
-            <Button android:id="@+id/btnFilterThermal" android:text="FLIR" style="@style/GpuFilterButton"/>
-            <Button android:id="@+id/btnFilterSketch" android:text="Draw" style="@style/GpuFilterButton"/>
+
+            <Button
+                android:id="@+id/btnFilterNormal"
+                style="@style/GpuFilterButton"
+                android:layout_height="48dp"
+                android:text="Normal" />
+
+            <Button
+                android:id="@+id/btnFilterBW"
+                style="@style/GpuFilterButton"
+                android:text="B&amp;N" />
+
+            <Button
+                android:id="@+id/btnFilterSepia"
+                style="@style/GpuFilterButton"
+                android:text="Sepia" />
+
+            <Button
+                android:id="@+id/btnFilterNegative"
+                style="@style/GpuFilterButton"
+                android:text="Neg" />
+
+            <Button
+                android:id="@+id/btnFilterIR"
+                style="@style/GpuFilterButton"
+                android:text="IR" />
+
+            <Button
+                android:id="@+id/btnFilterNight"
+                style="@style/GpuFilterButton"
+                android:text="NVG" />
+
+            <Button
+                android:id="@+id/btnFilterThermal"
+                style="@style/GpuFilterButton"
+                android:text="FLIR" />
+
+            <Button
+                android:id="@+id/btnFilterSketch"
+                style="@style/GpuFilterButton"
+                android:text="Draw" />
         </LinearLayout>
     </HorizontalScrollView>
 
@@ -74,14 +107,35 @@
         android:layout_height="80dp"
         android:layout_gravity="bottom"
         android:background="#000000"
+        android:elevation="8dp"
         android:gravity="center"
         android:orientation="horizontal"
-        android:padding="12dp"
-        android:elevation="8dp">
+        android:padding="12dp">
         <!-- ... (botones captura) ... -->
-        <ImageButton android:id="@+id/btnGallery" android:layout_width="50dp" android:layout_height="50dp" android:src="@android:drawable/ic_menu_gallery" android:background="?attr/selectableItemBackgroundBorderless" android:scaleType="centerCrop"/>
-        <ImageButton android:id="@+id/btnCapture" android:layout_width="70dp" android:layout_height="70dp" android:layout_marginHorizontal="40dp" android:src="@android:drawable/ic_menu_camera" android:background="@drawable/circle_button" android:scaleType="center"/>
-        <ImageButton android:id="@+id/btnMultiCapture" android:layout_width="50dp" android:layout_height="50dp" android:src="@android:drawable/ic_menu_camera" android:background="?attr/selectableItemBackgroundBorderless" android:scaleType="centerCrop"/>
+        <ImageButton
+            android:id="@+id/btnGallery"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:scaleType="centerCrop"
+            android:src="@android:drawable/ic_menu_gallery" />
+
+        <ImageButton
+            android:id="@+id/btnCapture"
+            android:layout_width="70dp"
+            android:layout_height="70dp"
+            android:layout_marginHorizontal="40dp"
+            android:background="@drawable/circle_button"
+            android:scaleType="center"
+            android:src="@android:drawable/ic_menu_camera" />
+
+        <ImageButton
+            android:id="@+id/btnMultiCapture"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:scaleType="centerCrop"
+            android:src="@android:drawable/ic_menu_camera" />
     </LinearLayout>
 
     <!-- PANEL DE EDICIÓN AVANZADA (Oculto por defecto) -->
@@ -90,98 +144,217 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="#EE000000"
+        android:elevation="15dp"
         android:orientation="vertical"
-        android:visibility="gone"
-        android:elevation="15dp">
+        android:visibility="gone">
         <!-- ... (contenido edición) ... -->
-        <ImageView android:id="@+id/editingPreview" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:scaleType="fitCenter" />
-        <ImageView android:id="@+id/histogramView" android:layout_width="match_parent" android:layout_height="60dp" android:background="#222" />
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:padding="8dp">
-            <Button android:id="@+id/btnUndo" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="↩" android:textSize="20sp" />
-            <Button android:id="@+id/btnRedo" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="↪" android:textSize="20sp" />
-            <Button android:id="@+id/btnResetEdits" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Reset" />
-            <Button android:id="@+id/btnApplyEdits" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Guardar" />
-        </LinearLayout>
-        <com.example.miappcamarapro3.ui.AdjustmentPanelView android:id="@+id/adjustmentPanel" android:layout_width="match_parent" android:layout_height="wrap_content" />
-        <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content" android:background="#333">
-            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:padding="8dp">
-                <Button android:id="@+id/btnDoubleExposure" android:layout_width="wrap_content" android:layout_height="40dp" android:text="Doble Exp" android:textSize="11sp" />
-                <Button android:id="@+id/btnLightLeaks" android:layout_width="wrap_content" android:layout_height="40dp" android:layout_marginStart="8dp" android:text="Light Leaks" android:textSize="11sp" />
-                <Button android:id="@+id/btnAnalogFilm" android:layout_width="wrap_content" android:layout_height="40dp" android:layout_marginStart="8dp" android:text="Película" android:textSize="11sp" />
-            </LinearLayout>
-        </HorizontalScrollView>
-    </LinearLayout>
+        <ImageView
+            android:id="@+id/editingPreview"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:scaleType="fitCenter" />
 
-    <!-- BARRA SUPERIOR: MODOS -->
-    <HorizontalScrollView
-        android:id="@+id/modeContainer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top"
-        android:background="#CC000000"
-        android:elevation="20dp">
+        <ImageView
+            android:id="@+id/histogramView"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:background="#222" />
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            style="?android:attr/buttonBarStyle"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:padding="8dp">
 
             <Button
-                android:id="@+id/btnModeAuto"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:backgroundTint="#2196F3"
-                android:text="AUTO"
-                android:textSize="12sp" />
+                android:id="@+id/btnUndo"
+                style="?android:attr/buttonBarButtonStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="↩"
+                android:textSize="20sp" />
 
             <Button
-                android:id="@+id/btnModeManual"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:layout_marginStart="8dp"
-                android:backgroundTint="#424242"
-                android:text="MANUAL"
-                android:textSize="12sp"
-                android:elevation="21dp" />
+                android:id="@+id/btnRedo"
+                style="?android:attr/buttonBarButtonStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="↪"
+                android:textSize="20sp" />
 
             <Button
-                android:id="@+id/btnModeRaw"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:layout_marginStart="8dp"
-                android:backgroundTint="#424242"
-                android:text="RAW"
-                android:textSize="12sp"
-                android:elevation="21dp" />
+                android:id="@+id/btnResetEdits"
+                style="?android:attr/buttonBarButtonStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Reset" />
 
             <Button
-                android:id="@+id/btnModeHdr"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:layout_marginStart="8dp"
-                android:backgroundTint="#424242"
-                android:text="HDR"
-                android:textSize="12sp"
-                android:elevation="21dp" />
-
-            <Spinner
-                android:id="@+id/cameraSelector"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:layout_marginStart="8dp"
-                android:backgroundTint="#FFFFFF"
-                android:elevation="21dp" />
-
+                android:id="@+id/btnApplyEdits"
+                style="?android:attr/buttonBarButtonStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Guardar" />
         </LinearLayout>
-    </HorizontalScrollView>
+
+        <com.example.miappcamarapro3.ui.AdjustmentPanelView
+            android:id="@+id/adjustmentPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#333">
+
+            <LinearLayout
+                style="?android:attr/buttonBarStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="8dp">
+
+                <Button
+                    android:id="@+id/btnDoubleExposure"
+                    style="?android:attr/buttonBarButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="Doble Exp"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnLightLeaks"
+                    style="?android:attr/buttonBarButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="8dp"
+                    android:text="Light Leaks"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnAnalogFilm"
+                    style="?android:attr/buttonBarButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="8dp"
+                    android:text="Película"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </HorizontalScrollView>
+    </LinearLayout>
+
+    <!-- BARRA SUPERIOR: CONTENEDOR REDISEÑADO -->
+    <LinearLayout
+        android:id="@+id/topBarLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#CC000000"
+        android:elevation="20dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnFlash"
+            android:layout_width="80dp"
+            android:layout_height="48dp"
+            android:layout_marginHorizontal="4dp"
+            android:backgroundTint="#FFCC00"
+            android:elevation="21dp"
+            android:text="LUZ"
+            android:textColor="#000000"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <!-- SEPARADOR -->
+        <View
+            android:layout_width="1dp"
+            android:layout_height="32dp"
+            android:background="#FFFF00" />
+
+        <HorizontalScrollView
+            android:id="@+id/modeContainer"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="8dp">
+
+                <Button
+                    android:id="@+id/btnModeAuto"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:backgroundTint="#2196F3"
+                    android:elevation="21dp"
+                    android:text="AUTO"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnModeManual"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:backgroundTint="#424242"
+                    android:elevation="21dp"
+                    android:text="MANUAL"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnModeRaw"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:backgroundTint="#424242"
+                    android:elevation="21dp"
+                    android:text="RAW"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnModeHdr"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:backgroundTint="#424242"
+                    android:elevation="21dp"
+                    android:text="HDR"
+                    android:textSize="12sp" />
+
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="32dp"
+                    android:layout_marginHorizontal="8dp"
+                    android:background="#44FFFFFF" />
+
+                <Spinner
+                    android:id="@+id/cameraSelector"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:backgroundTint="#FFFFFF"
+                    android:elevation="21dp" />
+
+            </LinearLayout>
+        </HorizontalScrollView>
+
+    </LinearLayout>
 
     <ProgressBar
         android:id="@+id/progressBar"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:visibility="gone"
-        android:elevation="30dp" />
+        android:elevation="30dp"
+        android:visibility="gone" />
 
 </FrameLayout>

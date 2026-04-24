@@ -5,6 +5,7 @@ import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.widget.*
 import com.example.miappcamarapro3.R
+import kotlin.math.exp
 
 /**
  * Vista personalizada para controles manuales de cámara
@@ -66,7 +67,7 @@ class ManualControlsView @JvmOverloads constructor(
         sbShutter.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 // Escala logarítmica: 1/4000s a 30s
-                val ms = kotlin.math.exp(progress / 10.0).toLong().coerceIn(1L, 30000L)
+                val ms = exp(progress / 10.0).toLong().coerceIn(1L, 30000L)
                 tvShutterValue.text = formatShutterSpeed(ms)
                 if (fromUser) onShutterSpeedChanged?.invoke(ms)
             }

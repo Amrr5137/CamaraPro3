@@ -51,6 +51,7 @@ class ManualModeController(
     var currentFocusDistance: Float = 0f // 0 = autofocus/infinito
     var currentWb: Int = 5500 // Kelvin
     var isManualFocus: Boolean = false
+    var currentFlashMode: Int = CaptureRequest.FLASH_MODE_OFF
 
     /**
      * Configura sesión en modo manual
@@ -151,6 +152,9 @@ class ManualModeController(
             CaptureRequest.CONTROL_AE_ANTIBANDING_MODE,
             CaptureRequest.CONTROL_AE_ANTIBANDING_MODE_OFF
         )
+
+        // Flash
+        builder.set(CaptureRequest.FLASH_MODE, currentFlashMode)
     }
 
     /**
@@ -196,6 +200,14 @@ class ManualModeController(
         currentWb = kelvin.coerceIn(2000, 8000)
         updatePreview()
         Log.d(TAG, "WB: ${currentWb}K")
+    }
+
+    /**
+     * Actualiza modo de flash
+     */
+    fun setFlashMode(mode: Int) {
+        currentFlashMode = mode
+        updatePreview()
     }
 
     /**

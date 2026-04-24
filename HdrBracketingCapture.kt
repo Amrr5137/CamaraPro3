@@ -10,6 +10,7 @@ import kotlinx.coroutines.*
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
+import kotlin.math.pow
 
 /**
  * Implementa HDR mediante bracketing de exposición
@@ -27,6 +28,20 @@ class HdrBracketingCapture(
 
     private var captureSession: CameraCaptureSession? = null
     private var imageReader: ImageReader? = null
+    var currentFlashMode: Int = CaptureRequest.FLASH_MODE_OFF
+
+    fun setFlashMode(mode: Int, previewSurface: Surface) {
+        currentFlashMode = mode
+        val session = captureSession ?: return
+        try {
+            val previewRequest = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+            previewRequest.addTarget(previewSurface)
+            previewRequest.set(CaptureRequest.FLASH_MODE, mode)
+            session.setRepeatingRequest(previewRequest.build(), null, backgroundHandler)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating flash in HDR mode", e)
+        }
+    }
 
     // Rangos de exposición soportados
     private val exposureRange: Range<Long>? = characteristics.get(
@@ -67,6 +82,7 @@ class HdrBracketingCapture(
                             val previewRequest =
                                 cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                             previewRequest.addTarget(previewSurface)
+                            previewRequest.set(CaptureRequest.FLASH_MODE, currentFlashMode)
                             session.setRepeatingRequest(
                                 previewRequest.build(),
                                 null,
@@ -97,6 +113,7 @@ class HdrBracketingCapture(
                             val previewRequest =
                                 cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                             previewRequest.addTarget(previewSurface)
+                            previewRequest.set(CaptureRequest.FLASH_MODE, currentFlashMode)
                             session.setRepeatingRequest(
                                 previewRequest.build(),
                                 null,
@@ -230,7 +247,7 @@ class HdrBracketingCapture(
     private fun calculateExposureForEv(baseExposure: Long, ev: Float): Long {
         // EV = log2(N²/t) - log2(L*S/100)
         // Simplificación: multiplicar/dividir tiempo por 2^EV
-        val factor = Math.pow(2.0, ev.toDouble()).toFloat()
+        val factor = 2.0.pow(ev.toDouble()).toFloat()
         return (baseExposure * factor).toLong().coerceIn(
             exposureRange?.lower ?: 1000L,
             exposureRange?.upper ?: 1000000000L

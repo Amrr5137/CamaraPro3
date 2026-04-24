@@ -34,6 +34,20 @@ class RawCaptureManager(
     private var pendingRawBytes: ByteArray? = null
     private var pendingJpegBytes: ByteArray? = null
     private val pendingLock = Any()
+    var currentFlashMode: Int = CaptureRequest.FLASH_MODE_OFF
+
+    fun setFlashMode(mode: Int, previewSurface: Surface) {
+        currentFlashMode = mode
+        val session = captureSession ?: return
+        try {
+            val previewRequest = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+            previewRequest.addTarget(previewSurface)
+            previewRequest.set(CaptureRequest.FLASH_MODE, mode)
+            session.setRepeatingRequest(previewRequest.build(), null, backgroundHandler)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating flash in RAW mode", e)
+        }
+    }
 
     /**
      * Verifica si la cámara soporta captura RAW
@@ -129,6 +143,7 @@ class RawCaptureManager(
                             val previewRequest =
                                 cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                             previewRequest.addTarget(previewSurface)
+                            previewRequest.set(CaptureRequest.FLASH_MODE, currentFlashMode)
                             session.setRepeatingRequest(
                                 previewRequest.build(),
                                 null,
@@ -159,6 +174,7 @@ class RawCaptureManager(
                             val previewRequest =
                                 cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                             previewRequest.addTarget(previewSurface)
+                            previewRequest.set(CaptureRequest.FLASH_MODE, currentFlashMode)
                             session.setRepeatingRequest(
                                 previewRequest.build(),
                                 null,
