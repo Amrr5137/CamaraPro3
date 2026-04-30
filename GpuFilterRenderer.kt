@@ -4,6 +4,7 @@ import android.graphics.SurfaceTexture
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.opengl.Matrix
 import android.view.Surface
 import jp.co.cyberagent.android.gpuimage.GPUImage
 import jp.co.cyberagent.android.gpuimage.filter.*
@@ -28,10 +29,11 @@ class GpuFilterRenderer : GLSurfaceView.Renderer {
     private val vertexShaderCode = """
         attribute vec4 vPosition;
         attribute vec2 vTexCoord;
+        uniform mat4 uTexMatrix;
         varying vec2 texCoord;
         void main() {
             gl_Position = vPosition;
-            texCoord = vTexCoord;
+            texCoord = (uTexMatrix * vec4(vTexCoord, 0.0, 1.0)).xy;
         }
     """.trimIndent()
 
@@ -49,7 +51,7 @@ class GpuFilterRenderer : GLSurfaceView.Renderer {
         -1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f
     )
     private val texCoords = floatArrayOf(
-        0f, 1f, 1f, 1f, 0f, 0f, 1f, 0f
+        0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f
     )
 
     private val vertexBuffer = java.nio.ByteBuffer.allocateDirect(vertices.size * 4)
@@ -60,20 +62,22 @@ class GpuFilterRenderer : GLSurfaceView.Renderer {
         .order(java.nio.ByteOrder.nativeOrder())
         .asFloatBuffer().apply { put(texCoords); position(0) }
 
-    private var currentFilter: GPUImageFilter = GPUImageFilter() // Filtro normal por defecto
+    private var currentFilter: GPUImageFilter = GPUImageFilter()
     private var filterType: FilterType = FilterType.NORMAL
+    private var pendingFilter: GPUImageFilter? = null
+
+    // FBO para conversión de OES a 2D
+    private var fboId = -1
+    private var fboTextureId = -1
+    private var renderWidth = 0
+    private var renderHeight = 0
 
     // Callback cuando el surface está listo para la cámara
     var onSurfaceReady: ((Surface) -> Unit)? = null
     var onRequestRender: (() -> Unit)? = null
 
-    fun initialize(width: Int, height: Int) {
-        // Inicializar GPUImage
-        gpuImage = GPUImage(null) // Contexto se setea después
-    }
-
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        // Compilar shaders
+        // Compilar shaders para el paso OES -> 2D
         vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode)
         fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode)
         program = GLES20.glCreateProgram().apply {
@@ -82,32 +86,16 @@ class GpuFilterRenderer : GLSurfaceView.Renderer {
             GLES20.glLinkProgram(this)
         }
 
-        // Crear texture para SurfaceTexture de la cámara
+        // Crear texture para SurfaceTexture de la cámara (OES)
         val textures = IntArray(1)
         GLES20.glGenTextures(1, textures, 0)
         textureId = textures[0]
 
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
-        GLES20.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES20.GL_TEXTURE_MIN_FILTER,
-            GLES20.GL_LINEAR
-        )
-        GLES20.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES20.GL_TEXTURE_MAG_FILTER,
-            GLES20.GL_LINEAR
-        )
-        GLES20.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES20.GL_TEXTURE_WRAP_S,
-            GLES20.GL_CLAMP_TO_EDGE
-        )
-        GLES20.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES20.GL_TEXTURE_WRAP_T,
-            GLES20.GL_CLAMP_TO_EDGE
-        )
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
 
         val st = SurfaceTexture(textureId)
         st.setOnFrameAvailableListener {
@@ -116,6 +104,9 @@ class GpuFilterRenderer : GLSurfaceView.Renderer {
         surfaceTexture = st
         surface = Surface(st)
 
+        // Inicializar filtro inicial
+        currentFilter.ifNeedInit()
+
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             onSurfaceReady?.invoke(surface!!)
         }
@@ -123,19 +114,70 @@ class GpuFilterRenderer : GLSurfaceView.Renderer {
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
-        surfaceTexture?.setDefaultBufferSize(width, height)
+        renderWidth = width
+        renderHeight = height
+        
+        setupFbo(width, height)
+        currentFilter.onOutputSizeChanged(width, height)
     }
+
+    private fun setupFbo(width: Int, height: Int) {
+        if (fboId != -1) {
+            GLES20.glDeleteFramebuffers(1, intArrayOf(fboId), 0)
+            GLES20.glDeleteTextures(1, intArrayOf(fboTextureId), 0)
+        }
+
+        val fbos = IntArray(1)
+        GLES20.glGenFramebuffers(1, fbos, 0)
+        fboId = fbos[0]
+
+        val textures = IntArray(1)
+        GLES20.glGenTextures(1, textures, 0)
+        fboTextureId = textures[0]
+
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fboTextureId)
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, width, height, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fboId)
+        GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, fboTextureId, 0)
+
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+    }
+
+    private val transformMatrix = FloatArray(16)
+    var screenRotation: Int = 0 // 0, 90, 180, 270
 
     override fun onDrawFrame(gl: GL10?) {
         try {
-            val st = surfaceTexture
-            if (st == null) return
+            val st = surfaceTexture ?: return
             
             st.updateTexImage()
+            st.getTransformMatrix(transformMatrix)
 
+            // Manejar cambio de filtro pendiente (debe ocurrir en el hilo GL)
+            pendingFilter?.let {
+                currentFilter.destroy()
+                currentFilter = it
+                currentFilter.ifNeedInit()
+                currentFilter.onOutputSizeChanged(renderWidth, renderHeight)
+                pendingFilter = null
+            }
+
+            // Paso 1: OES -> FBO (Textura 2D normal)
+            // Aplicamos aquí la rotación y el transform de la cámara
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fboId)
+            GLES20.glViewport(0, 0, renderWidth, renderHeight)
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-            GLES20.glUseProgram(program)
 
+            Matrix.translateM(transformMatrix, 0, 0.5f, 0.5f, 0f)
+            Matrix.rotateM(transformMatrix, 0, -screenRotation.toFloat(), 0f, 0f, 1f)
+            Matrix.translateM(transformMatrix, 0, -0.5f, -0.5f, 0f)
+
+            GLES20.glUseProgram(program)
             val posHandle = GLES20.glGetAttribLocation(program, "vPosition")
             GLES20.glEnableVertexAttribArray(posHandle)
             GLES20.glVertexAttribPointer(posHandle, 2, GLES20.GL_FLOAT, false, 8, vertexBuffer)
@@ -144,11 +186,22 @@ class GpuFilterRenderer : GLSurfaceView.Renderer {
             GLES20.glEnableVertexAttribArray(texHandle)
             GLES20.glVertexAttribPointer(texHandle, 2, GLES20.GL_FLOAT, false, 8, texBuffer)
 
+            val matrixHandle = GLES20.glGetUniformLocation(program, "uTexMatrix")
+            GLES20.glUniformMatrix4fv(matrixHandle, 1, false, transformMatrix, 0)
+
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
             GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "sTexture"), 0)
 
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+
+            // Paso 2: FBO (2D) -> Pantalla aplicando el Filtro de GPUImage
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+            GLES20.glViewport(0, 0, renderWidth, renderHeight)
+            
+            // Los filtros de GPUImage esperan coordenadas de textura estándar (invertidas en Y para OpenGL)
+            // pero como ya las procesamos en el FBO, usamos un buffer simple
+            currentFilter.onDraw(fboTextureId, vertexBuffer, texBuffer)
 
             GLES20.glDisableVertexAttribArray(posHandle)
             GLES20.glDisableVertexAttribArray(texHandle)
@@ -166,7 +219,7 @@ class GpuFilterRenderer : GLSurfaceView.Renderer {
 
     fun updateFilter(filterType: FilterType) {
         this.filterType = filterType
-        currentFilter = when (filterType) {
+        val newFilter = when (filterType) {
             FilterType.NORMAL, FilterType.NONE -> GPUImageFilter()
             FilterType.BLACK_WHITE, FilterType.MONOCHROME -> GPUImageGrayscaleFilter()
             FilterType.SEPIA -> GPUImageSepiaToneFilter()
@@ -194,6 +247,7 @@ class GpuFilterRenderer : GLSurfaceView.Renderer {
 
             FilterType.SKETCH -> GPUImageSketchFilter()
         }
+        pendingFilter = newFilter
     }
 
     fun getSurfaceTexture(): SurfaceTexture? = surfaceTexture

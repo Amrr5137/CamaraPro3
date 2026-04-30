@@ -112,21 +112,25 @@ class ManualModeController(
      * Crea request de preview con controles manuales
      */
     private fun createManualPreviewRequest(previewSurface: Surface) {
-        previewRequestBuilder = cameraDevice.createCaptureRequest(
-            CameraDevice.TEMPLATE_PREVIEW
-        ).apply {
-            addTarget(previewSurface)
+        try {
+            previewRequestBuilder = cameraDevice.createCaptureRequest(
+                CameraDevice.TEMPLATE_PREVIEW
+            ).apply {
+                addTarget(previewSurface)
 
-            // Desactivar AE/AF automático
-            set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
-            set(
-                CaptureRequest.CONTROL_AF_MODE,
-                if (isManualFocus) CaptureRequest.CONTROL_AF_MODE_OFF
-                else CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
-            )
+                // Desactivar AE/AF automático
+                set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+                set(
+                    CaptureRequest.CONTROL_AF_MODE,
+                    if (isManualFocus) CaptureRequest.CONTROL_AF_MODE_OFF
+                    else CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+                )
 
-            // Aplicar valores manuales
-            applyManualSettings(this)
+                // Aplicar valores manuales
+                applyManualSettings(this)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creando preview request manual", e)
         }
     }
 
@@ -241,9 +245,12 @@ class ManualModeController(
         val session = captureSession ?: return
         val builder = previewRequestBuilder ?: return
 
-        applyManualSettings(builder)
-
-        session.setRepeatingRequest(builder.build(), null, backgroundHandler)
+        try {
+            applyManualSettings(builder)
+            session.setRepeatingRequest(builder.build(), null, backgroundHandler)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error actualizando preview manual", e)
+        }
     }
 
     /**

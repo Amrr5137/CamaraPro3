@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="#000000">
 
     <!-- PREVIEW CÁMARA -->
     <com.example.miappcamarapro3.ui.CameraGLSurfaceView
@@ -118,6 +119,9 @@
             android:layout_height="50dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:scaleType="centerCrop"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Galería"
             android:src="@android:drawable/ic_menu_gallery" />
 
         <ImageButton
@@ -249,104 +253,100 @@
         </HorizontalScrollView>
     </LinearLayout>
 
-    <!-- BARRA SUPERIOR: CONTENEDOR REDISEÑADO -->
     <LinearLayout
         android:id="@+id/topBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
-        android:background="#CC000000"
-        android:elevation="20dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:background="#AA000000"
+        android:elevation="99dp"
+        android:paddingTop="36dp"
+        android:orientation="vertical">
 
-        <Button
-            android:id="@+id/btnFlash"
-            android:layout_width="80dp"
-            android:layout_height="48dp"
-            android:layout_marginHorizontal="4dp"
-            android:backgroundTint="#FFCC00"
-            android:elevation="21dp"
-            android:text="LUZ"
-            android:textColor="#000000"
-            android:textSize="10sp"
-            android:textStyle="bold" />
-
-        <!-- SEPARADOR -->
-        <View
-            android:layout_width="1dp"
-            android:layout_height="32dp"
-            android:background="#FFFF00" />
-
-        <HorizontalScrollView
-            android:id="@+id/modeContainer"
-            android:layout_width="0dp"
+        <!-- Fila 1: Utilidades -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="8dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnFlash"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:backgroundTint="#FFCC00"
+                android:text="LUZ"
+                android:textColor="#000000"
+                android:textSize="10sp" />
+
+            <Spinner
+                android:id="@+id/cameraSelector"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:backgroundTint="#FFFFFF" />
+        </LinearLayout>
+
+        <!-- Fila 2: Modos Principales -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingVertical="4dp"
             android:scrollbars="none">
 
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="8dp">
+                android:paddingHorizontal="8dp"
+                android:orientation="horizontal">
 
-                <Button
-                    android:id="@+id/btnModeAuto"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:backgroundTint="#2196F3"
-                    android:elevation="21dp"
-                    android:text="AUTO"
-                    android:textSize="12sp" />
-
-                <Button
-                    android:id="@+id/btnModeManual"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="8dp"
-                    android:backgroundTint="#424242"
-                    android:elevation="21dp"
-                    android:text="MANUAL"
-                    android:textSize="12sp" />
-
-                <Button
-                    android:id="@+id/btnModeRaw"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="8dp"
-                    android:backgroundTint="#424242"
-                    android:elevation="21dp"
-                    android:text="RAW"
-                    android:textSize="12sp" />
-
-                <Button
-                    android:id="@+id/btnModeHdr"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="8dp"
-                    android:backgroundTint="#424242"
-                    android:elevation="21dp"
-                    android:text="HDR"
-                    android:textSize="12sp" />
-
-                <View
-                    android:layout_width="1dp"
-                    android:layout_height="32dp"
-                    android:layout_marginHorizontal="8dp"
-                    android:background="#44FFFFFF" />
-
-                <Spinner
-                    android:id="@+id/cameraSelector"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:backgroundTint="#FFFFFF"
-                    android:elevation="21dp" />
-
+                <Button android:id="@+id/btnModeAuto" android:layout_width="wrap_content" android:layout_height="40dp" android:text="AUTO" android:backgroundTint="#2196F3" android:textSize="11sp" />
+                <Button android:id="@+id/btnModeManual" android:layout_width="wrap_content" android:layout_height="40dp" android:layout_marginStart="4dp" android:text="MANUAL" android:backgroundTint="#424242" android:textSize="11sp" />
+                <Button android:id="@+id/btnModeRaw" android:layout_width="wrap_content" android:layout_height="40dp" android:layout_marginStart="4dp" android:text="RAW" android:backgroundTint="#424242" android:textSize="11sp" />
+                <Button android:id="@+id/btnModeHdr" android:layout_width="wrap_content" android:layout_height="40dp" android:layout_marginStart="4dp" android:text="HDR" android:backgroundTint="#424242" android:textSize="11sp" />
             </LinearLayout>
         </HorizontalScrollView>
 
+        <!-- Fila 3: Modos Especiales (Nuevos) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="8dp"
+            android:paddingBottom="8dp"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnTimeLapse"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:backgroundTint="#9C27B0"
+                android:text="TIME"
+                android:textSize="10sp" />
+
+            <Button
+                android:id="@+id/btnAstro"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:backgroundTint="#1A237E"
+                android:text="ASTRO"
+                android:textSize="10sp" />
+
+            <Button
+                android:id="@+id/btnCollage"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:backgroundTint="#00695C"
+                android:text="COLLAGE"
+                android:textSize="10sp" />
+        </LinearLayout>
     </LinearLayout>
 
     <ProgressBar

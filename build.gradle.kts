@@ -50,6 +50,10 @@ dependencies {
     // GPU Image
     implementation(libs.gpuimage)
 
+    // Glide for image loading
+    implementation("com.github.bumptech.glide:glide:5.0.7")
+    annotationProcessor("com.github.bumptech.glide:compiler:5.0.7")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

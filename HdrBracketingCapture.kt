@@ -1,15 +1,19 @@
 package com.example.miappcamarapro3.camara
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.hardware.camera2.*
 import android.media.ImageReader
 import android.os.Handler
 import android.util.Log
 import android.util.Range
+import android.util.Size
 import android.view.Surface
 import kotlinx.coroutines.*
+import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
+import kotlin.math.exp
 import kotlin.math.pow
 
 /**
@@ -36,7 +40,7 @@ class HdrBracketingCapture(
         try {
             val previewRequest = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
             previewRequest.addTarget(previewSurface)
-            previewRequest.set(CaptureRequest.FLASH_MODE, mode)
+            previewRequest[CaptureRequest.FLASH_MODE] = mode
             session.setRepeatingRequest(previewRequest.build(), null, backgroundHandler)
         } catch (e: Exception) {
             Log.e(TAG, "Error updating flash in HDR mode", e)
@@ -44,21 +48,18 @@ class HdrBracketingCapture(
     }
 
     // Rangos de exposición soportados
-    private val exposureRange: Range<Long>? = characteristics.get(
-        CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE
-    )
+    private val exposureRange: Range<Long>? = characteristics[CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE]
 
-    private val isoRange: Range<Int>? = characteristics.get(
-        CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE
-    )
+    private val isoRange: Range<Int>? = characteristics[CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE]
 
     /**
      * Configura sesión para bracketing
      */
     suspend fun setupSession(
         previewSurface: Surface,
-        captureSize: android.util.Size
-    ) = suspendCancellableCoroutine<Unit> { continuation ->
+        captureSize: Size,
+        captureCallback: CameraCaptureSession.CaptureCallback? = null
+    ) = suspendCancellableCoroutine { continuation ->
 
         imageReader = ImageReader.newInstance(
             captureSize.width, captureSize.height,
@@ -73,7 +74,7 @@ class HdrBracketingCapture(
             val sessionConfiguration = android.hardware.camera2.params.SessionConfiguration(
                 android.hardware.camera2.params.SessionConfiguration.SESSION_REGULAR,
                 outputConfigs,
-                java.util.concurrent.Executor { command -> backgroundHandler.post(command) },
+                { command -> backgroundHandler.post(command) },
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(session: CameraCaptureSession) {
                         captureSession = session
@@ -82,10 +83,10 @@ class HdrBracketingCapture(
                             val previewRequest =
                                 cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                             previewRequest.addTarget(previewSurface)
-                            previewRequest.set(CaptureRequest.FLASH_MODE, currentFlashMode)
+                            previewRequest[CaptureRequest.FLASH_MODE] = currentFlashMode
                             session.setRepeatingRequest(
                                 previewRequest.build(),
-                                null,
+                                captureCallback,
                                 backgroundHandler
                             )
                             Log.d(TAG, "Preview de HDR iniciado")
@@ -113,10 +114,10 @@ class HdrBracketingCapture(
                             val previewRequest =
                                 cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                             previewRequest.addTarget(previewSurface)
-                            previewRequest.set(CaptureRequest.FLASH_MODE, currentFlashMode)
+                            previewRequest[CaptureRequest.FLASH_MODE] = currentFlashMode
                             session.setRepeatingRequest(
                                 previewRequest.build(),
-                                null,
+                                captureCallback,
                                 backgroundHandler
                             )
                             Log.d(TAG, "Preview de HDR iniciado")
@@ -139,10 +140,14 @@ class HdrBracketingCapture(
      * Ejecuta captura HDR con bracketing
      * @param steps Número de pasos (impar recomendado: 3, 5, 7)
      * @param evStep Tamaño del paso EV (ej: 1.0f = 1 stop)
+     * @param baseExposure Tiempo de exposición base (AE)
+     * @param baseIso Sensibilidad base (AE)
      */
     suspend fun captureHdrBracketing(
         steps: Int = DEFAULT_BRACKET_STEPS,
-        evStep: Float = 1.5f
+        evStep: Float = 1.2f,
+        baseExposure: Long = 33333333L,
+        baseIso: Int = 400
     ): List<ByteArray> = suspendCancellableCoroutine { continuation ->
 
         val session = captureSession ?: run {
@@ -154,89 +159,165 @@ class HdrBracketingCapture(
         val captureList = mutableListOf<CaptureRequest>()
 
         // Calcular exposiciones
-        val baseExposure = 33333333L // ~1/30s en nanosegundos
         val evValues = calculateEvSteps(steps, evStep)
 
         // Crear requests para cada exposición
-        evValues.forEach { ev ->
-            val request = cameraDevice.createCaptureRequest(
-                CameraDevice.TEMPLATE_STILL_CAPTURE
-            ).apply {
-                addTarget(imageReader!!.surface)
+        try {
+            evValues.forEach { ev ->
+                val requestBuilder = cameraDevice.createCaptureRequest(
+                    CameraDevice.TEMPLATE_STILL_CAPTURE
+                ).apply {
+                    addTarget(imageReader!!.surface)
 
-                // Modo manual para controlar exposición
-                set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+                    // Modo manual para controlar exposición
+                    set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
 
-                // Calcular tiempo de exposición para este EV
-                val exposureTime = calculateExposureForEv(baseExposure, ev)
-                set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureTime)
+                    // Calcular tiempo de exposición para este EV
+                    val exposureTime = calculateExposureForEv(baseExposure, ev)
+                    set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureTime)
 
-                // ISO fijo para bracketing consistente
-                set(CaptureRequest.SENSOR_SENSITIVITY, 100)
+                    // ISO fijo para bracketing consistente
+                    set(CaptureRequest.SENSOR_SENSITIVITY, baseIso)
 
-                // Estabilización
-                set(
-                    CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
-                    CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_ON
-                )
-            }.build()
+                    // Estabilización
+                    set(
+                        CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
+                        CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_ON
+                    )
+                    
+                    set(CaptureRequest.FLASH_MODE, currentFlashMode)
+                }
 
-            captureList.add(request)
+                captureList.add(requestBuilder.build())
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creando solicitudes de captura HDR", e)
+            continuation.resume(emptyList())
+            return@suspendCancellableCoroutine
         }
 
         // Listener para capturas
         imageReader?.setOnImageAvailableListener({ reader ->
-            val image = reader.acquireNextImage() ?: return@setOnImageAvailableListener
-            val buffer = image.planes[0].buffer
-            val bytes = ByteArray(buffer.remaining())
-            buffer.get(bytes)
-            image.close()
+            try {
+                val image = reader.acquireNextImage() ?: return@setOnImageAvailableListener
+                val buffer = image.planes[0].buffer
+                val bytes = ByteArray(buffer.remaining())
+                buffer.get(bytes)
+                image.close()
 
-            images.add(bytes)
+                synchronized(images) {
+                    images.add(bytes)
+                    Log.d(TAG, "Imagen HDR capturada: ${images.size}/$steps")
 
-            if (images.size >= steps) {
-                continuation.resume(images.toList())
+                    if (images.size >= steps) {
+                        if (continuation.isActive) {
+                            continuation.resume(images.toList())
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error procesando imagen HDR", e)
             }
         }, backgroundHandler)
 
         // Ejecutar burst capture
-        session.captureBurst(
-            captureList,
-            object : CameraCaptureSession.CaptureCallback() {
-                override fun onCaptureCompleted(
-                    session: CameraCaptureSession,
-                    request: CaptureRequest,
-                    result: TotalCaptureResult
-                ) {
-                    val ev = result.get(CaptureResult.SENSOR_EXPOSURE_TIME)
-                    Log.d(TAG, "Capturado: ${ev}ns")
-                }
-
-                override fun onCaptureFailed(
-                    session: CameraCaptureSession,
-                    request: CaptureRequest,
-                    failure: CaptureFailure
-                ) {
-                    Log.e(TAG, "Captura fallida: ${failure.reason}")
-                }
-            },
-            backgroundHandler
-        )
+        try {
+            session.captureBurst(
+                captureList,
+                object : CameraCaptureSession.CaptureCallback() {
+                    override fun onCaptureFailed(
+                        session: CameraCaptureSession,
+                        request: CaptureRequest,
+                        failure: CaptureFailure
+                    ) {
+                        Log.e(TAG, "Captura fallida: ${failure.reason}")
+                    }
+                },
+                backgroundHandler
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error en captureBurst HDR", e)
+            continuation.resume(emptyList())
+        }
     }
 
     /**
-     * Fusiona imágenes HDR (simplificación - en producción usar algoritmo profesional)
+     * Fusiona imágenes HDR usando un algoritmo de ponderación por luminancia
      */
-    fun mergeHdrImages(images: List<ByteArray>): ByteArray {
-        // Placeholder - en implementación real:
-        // 1. Decodificar todas las imágenes
-        // 2. Alinear (anti-ghosting)
-        // 3. Fusionar con algoritmo Debevec, Robertson o similar
-        // 4. Tone mapping (Reinhard, Drago, etc.)
-        // 5. Retornar JPEG final
+    suspend fun mergeHdrImages(images: List<ByteArray>): ByteArray = withContext(Dispatchers.Default) {
+        if (images.isEmpty()) return@withContext ByteArray(0)
+        if (images.size == 1) return@withContext images[0]
 
-        // Por ahora retornar la imagen de exposición media
-        return images.getOrNull(images.size / 2) ?: images.firstOrNull() ?: ByteArray(0)
+        try {
+            Log.d(TAG, "Iniciando fusión HDR de ${images.size} fotos...")
+
+            // Decodificar todas las imágenes
+            val bitmaps = images.map { 
+                BitmapFactory.decodeByteArray(it, 0, it.size).copy(Bitmap.Config.ARGB_8888, true) 
+            }
+            
+            val width = bitmaps[0].width
+            val height = bitmaps[0].height
+            val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            
+            val size = width * height
+            val accumR = FloatArray(size)
+            val accumG = FloatArray(size)
+            val accumB = FloatArray(size)
+            val accumW = FloatArray(size)
+            
+            // Función de peso (Gaussiana centrada en 128)
+            val weightTable = FloatArray(256) { i ->
+                val dist = (i - 128f) / 128f
+                exp(-dist * dist * 4.0f) // Mayor peso al centro
+            }
+
+            for (bmp in bitmaps) {
+                val pixels = IntArray(size)
+                bmp.getPixels(pixels, 0, width, 0, 0, width, height)
+                
+                for (i in 0 until size) {
+                    val p = pixels[i]
+                    val r = Color.red(p)
+                    val g = Color.green(p)
+                    val b = Color.blue(p)
+                    
+                    // Luminancia para el peso
+                    val lum = ((0.299f * r) + (0.587f * g) + (0.114f * b)).toInt().coerceIn(0, 255)
+                    val w = weightTable[lum]
+                    
+                    accumR[i] += r * w
+                    accumG[i] += g * w
+                    accumB[i] += b * w
+                    accumW[i] += w
+                }
+                bmp.recycle()
+            }
+
+            val resultPixels = IntArray(size)
+            for (i in 0 until size) {
+                val w = if (accumW[i] > 0) accumW[i] else 1.0f
+                val r = (accumR[i] / w).toInt().coerceIn(0, 255)
+                val g = (accumG[i] / w).toInt().coerceIn(0, 255)
+                val b = (accumB[i] / w).toInt().coerceIn(0, 255)
+                resultPixels[i] = Color.rgb(r, g, b)
+            }
+
+            resultBitmap.setPixels(resultPixels, 0, width, 0, 0, width, height)
+            
+            // Comprimir a JPEG
+            val outputStream = ByteArrayOutputStream()
+            resultBitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
+            val finalBytes = outputStream.toByteArray()
+            
+            resultBitmap.recycle()
+            Log.d(TAG, "Fusión HDR completada")
+            return@withContext finalBytes
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fusionando HDR", e)
+            return@withContext images[images.size / 2]
+        }
     }
 
     private fun calculateEvSteps(steps: Int, evStep: Float): List<Float> {
@@ -245,8 +326,6 @@ class HdrBracketingCapture(
     }
 
     private fun calculateExposureForEv(baseExposure: Long, ev: Float): Long {
-        // EV = log2(N²/t) - log2(L*S/100)
-        // Simplificación: multiplicar/dividir tiempo por 2^EV
         val factor = 2.0.pow(ev.toDouble()).toFloat()
         return (baseExposure * factor).toLong().coerceIn(
             exposureRange?.lower ?: 1000L,
@@ -259,4 +338,3 @@ class HdrBracketingCapture(
         imageReader?.close()
     }
 }
-

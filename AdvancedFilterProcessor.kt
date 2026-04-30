@@ -67,7 +67,7 @@ class AdvancedFilterProcessor {
     enum class Channel { RGB, RED, GREEN, BLUE }
 
     /**
-     * Aplica curvas de tono a la imagen
+     * Aplica curvas de tono a la imagen (Optimizado con LUT)
      */
     fun applyToneCurves(bitmap: Bitmap, curve: ToneCurve): Bitmap {
         val width = bitmap.width
@@ -77,18 +77,18 @@ class AdvancedFilterProcessor {
         val pixels = IntArray(width * height)
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
+        // Pre-calcular tablas de búsqueda (LUT) para cada canal (0..255)
+        val lutR = IntArray(256) { i -> (curve.getInterpolatedValue(i / 255f, Channel.RED) * 255).toInt().coerceIn(0, 255) }
+        val lutG = IntArray(256) { i -> (curve.getInterpolatedValue(i / 255f, Channel.GREEN) * 255).toInt().coerceIn(0, 255) }
+        val lutB = IntArray(256) { i -> (curve.getInterpolatedValue(i / 255f, Channel.BLUE) * 255).toInt().coerceIn(0, 255) }
+
         for (i in pixels.indices) {
             val pixel = pixels[i]
+            val r = Color.red(pixel)
+            val g = Color.green(pixel)
+            val b = Color.blue(pixel)
 
-            val r = Color.red(pixel) / 255f
-            val g = Color.green(pixel) / 255f
-            val b = Color.blue(pixel) / 255f
-
-            val newR = (curve.getInterpolatedValue(r, Channel.RED) * 255).toInt().coerceIn(0, 255)
-            val newG = (curve.getInterpolatedValue(g, Channel.GREEN) * 255).toInt().coerceIn(0, 255)
-            val newB = (curve.getInterpolatedValue(b, Channel.BLUE) * 255).toInt().coerceIn(0, 255)
-
-            pixels[i] = Color.rgb(newR, newG, newB)
+            pixels[i] = Color.rgb(lutR[r], lutG[g], lutB[b])
         }
 
         result.setPixels(pixels, 0, width, 0, 0, width, height)
@@ -533,7 +533,7 @@ class AdvancedFilterProcessor {
     }
 
     /**
-     * Ajustes de exposición completos tipo Lightroom
+     * Ajustes de exposición completos tipo Lightroom (Optimizado)
      */
     fun applyExposureAdjustments(
         bitmap: Bitmap,
@@ -551,50 +551,41 @@ class AdvancedFilterProcessor {
         val pixels = IntArray(width * height)
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
+        val exposureFactor = 2f.pow(exposure)
+        val contrastFactor = (contrast + 100) / 100f
+        val whiteAdj = whites / 100f
+        val blackAdj = blacks / 100f
+        val highAdj = highlights / 100f
+        val shadAdj = shadows / 100f
+
         for (i in pixels.indices) {
             val pixel = pixels[i]
 
-            var r = Color.red(pixel) / 255f
-            var g = Color.green(pixel) / 255f
-            var b = Color.blue(pixel) / 255f
-
-            // Exposure
-            val exposureFactor = 2f.pow(exposure)
-            r *= exposureFactor
-            g *= exposureFactor
-            b *= exposureFactor
+            var r = (Color.red(pixel) / 255f) * exposureFactor
+            var g = (Color.green(pixel) / 255f) * exposureFactor
+            var b = (Color.blue(pixel) / 255f) * exposureFactor
 
             // Contrast
-            val contrastFactor = (contrast + 100) / 100f
             r = (r - 0.5f) * contrastFactor + 0.5f
             g = (g - 0.5f) * contrastFactor + 0.5f
             b = (b - 0.5f) * contrastFactor + 0.5f
 
-            // Highlights & Shadows (simplificación de tone mapping)
+            // Highlights & Shadows
             val luminance = 0.299f * r + 0.587f * g + 0.114f * b
-
             if (luminance > 0.5f) {
-                val highlightFactor = 1 - (highlights / 100f) * (luminance - 0.5f) * 2
-                r *= highlightFactor
-                g *= highlightFactor
-                b *= highlightFactor
+                val f = 1.0f - highAdj * (luminance - 0.5f) * 2.0f
+                r *= f; g *= f; b *= f
             } else {
-                val shadowFactor = 1 + (shadows / 100f) * (0.5f - luminance) * 2
-                r *= shadowFactor
-                g *= shadowFactor
-                b *= shadowFactor
+                val f = 1.0f + shadAdj * (0.5f - luminance) * 2.0f
+                r *= f; g *= f; b *= f
             }
 
             // Whites & Blacks
-            r = (r * (1 + whites / 100f) + blacks / 100f).coerceIn(0f, 1f)
-            g = (g * (1 + whites / 100f) + blacks / 100f).coerceIn(0f, 1f)
-            b = (b * (1 + whites / 100f) + blacks / 100f).coerceIn(0f, 1f)
+            r = (r * (1f + whiteAdj) + blackAdj).coerceIn(0f, 1f)
+            g = (g * (1f + whiteAdj) + blackAdj).coerceIn(0f, 1f)
+            b = (b * (1f + whiteAdj) + blackAdj).coerceIn(0f, 1f)
 
-            pixels[i] = Color.rgb(
-                (r * 255).toInt().coerceIn(0, 255),
-                (g * 255).toInt().coerceIn(0, 255),
-                (b * 255).toInt().coerceIn(0, 255)
-            )
+            pixels[i] = Color.rgb((r * 255).toInt(), (g * 255).toInt(), (b * 255).toInt())
         }
 
         result.setPixels(pixels, 0, width, 0, 0, width, height)
@@ -602,12 +593,12 @@ class AdvancedFilterProcessor {
     }
 
     /**
-     * Ajustes de color: Temperatura, Tint, Vibrance, Saturación
+     * Ajustes de color: Temperatura, Tint, Vibrance, Saturación (Optimizado)
      */
     fun applyColorAdjustments(
         bitmap: Bitmap,
-        temperature: Float = 0f,    // -100 (frío) a 100 (cálido)
-        tint: Float = 0f,           // -100 (verde) a 100 (magenta)
+        temperature: Float = 0f,    // -100 a 100
+        tint: Float = 0f,           // -100 a 100
         vibrance: Float = 0f,        // -100 a 100
         saturation: Float = 0f       // -100 a 100
     ): Bitmap {
@@ -618,32 +609,28 @@ class AdvancedFilterProcessor {
         val pixels = IntArray(width * height)
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
+        val satFactor = 1f + saturation / 100f
+        val vibFactor = vibrance / 100f
+        
+        val tempShift = (temperature / 100f) * 15f
+        val tintShift = (tint / 100f) * 10f
+
+        val hsv = FloatArray(3)
         for (i in pixels.indices) {
             val pixel = pixels[i]
-            val hsv = FloatArray(3)
             Color.colorToHSV(pixel, hsv)
 
-            // Temperature (ajuste de matiz en rojos/azules)
-            val tempShift = temperature / 100f * 30f
-            if (hsv[0] in 330f..360f || hsv[0] in 0f..60f) {
-                hsv[0] = (hsv[0] + tempShift).coerceIn(0f, 360f)
-            } else if (hsv[0] in 180f..260f) {
-                hsv[0] = (hsv[0] - tempShift).coerceIn(0f, 360f)
+            // Temperature / Tint
+            hsv[0] = (hsv[0] + tempShift + tintShift + 360f) % 360f
+            
+            // Vibrance: saturación que protege lo ya saturado
+            val currentSat = hsv[1]
+            if (vibFactor != 0f) {
+                hsv[1] = (currentSat + vibFactor * (1f - currentSat)).coerceIn(0f, 1f)
             }
-
-            // Tint (ajuste de matiz en verdes/magentas)
-            val tintShift = tint / 100f * 20f
-            if (hsv[0] in 60f..180f) {
-                hsv[0] = (hsv[0] + tintShift).coerceIn(0f, 360f)
-            }
-
-            // Vibrance (saturación inteligente que protege tonos de piel)
-            val isSkinTone = hsv[0] in 15f..45f && hsv[1] in 0.2f..0.6f
-            val vibranceFactor = if (isSkinTone) vibrance * 0.3f else vibrance
-            hsv[1] = (hsv[1] * (1 + vibranceFactor / 100f)).coerceIn(0f, 1f)
 
             // Saturación global
-            hsv[1] = (hsv[1] * (1 + saturation / 100f)).coerceIn(0f, 1f)
+            hsv[1] = (hsv[1] * satFactor).coerceIn(0f, 1f)
 
             pixels[i] = Color.HSVToColor(Color.alpha(pixel), hsv)
         }

@@ -2,10 +2,12 @@ package com.example.miappcamarapro3
 
 import android.Manifest
 import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.hardware.camera2.CameraCaptureSession
@@ -13,8 +15,10 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.media.ImageReader
+import android.media.MediaScannerConnection
 import android.opengl.GLSurfaceView
 import android.os.Build
 import android.os.Bundle
@@ -56,11 +60,21 @@ import com.example.miappcamarapro3.filters.AdvancedFilterProcessor
 import com.example.miappcamarapro3.filters.FilterProcessor
 import com.example.miappcamarapro3.filters.FilterType
 import com.example.miappcamarapro3.filters.GpuFilterRenderer
+import com.bumptech.glide.Glide
+import androidx.appcompat.app.AlertDialog
+import com.example.miappcamarapro3.filters.AstrophotographyManager
+import com.example.miappcamarapro3.filters.CollageGridManager
+import com.example.miappcamarapro3.filters.TimeLapseManager
+import com.example.miappcamarapro3.utils.ImageSaver
 import com.example.miappcamarapro3.filters.LightLeaksProcessor
 import com.example.miappcamarapro3.ui.AdjustmentPanelView
 import com.example.miappcamarapro3.ui.CameraGLSurfaceView
 import com.example.miappcamarapro3.ui.CurveEditorView
 import com.example.miappcamarapro3.ui.ManualControlsView
+import com.example.miappcamarapro3.ui.GalleryAdapter
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -130,11 +144,30 @@ class MainActivity : AppCompatActivity() {
 
     private val cameraOpenCloseLock = Mutex()
 
+    private val imageReaderListener = ImageReader.OnImageAvailableListener { reader ->
+        val image = reader.acquireNextImage() ?: return@OnImageAvailableListener
+        val cameraId = cameraDevice?.id ?: "0"
+        val buffer = image.planes[0].buffer
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+        image.close()
+        processCapturedImage(bytes, cameraId)
+    }
+
     // Managers especializados
     private var rawCaptureManager: RawCaptureManager? = null
     private var hdrCaptureManager: HdrBracketingCapture? = null
     private var manualController: ManualModeController? = null
     private var gpuRenderer: GpuFilterRenderer? = null
+    private var timeLapseManager: TimeLapseManager? = null
+    private var astroManager: AstrophotographyManager? = null
+    private lateinit var collageManager: CollageGridManager
+    private lateinit var imageSaver: ImageSaver
+
+    // Botones nuevos
+    private lateinit var btnTimeLapse: Button
+    private lateinit var btnAstro: Button
+    private lateinit var btnCollage: Button
 
     // Filtros
     private lateinit var filterProcessor: FilterProcessor
@@ -148,6 +181,49 @@ class MainActivity : AppCompatActivity() {
     private var isActivityResumed = false
     private var lastCapturedFile: File? = null
     private var cameraSetupJob: Job? = null
+    private var lastCaptureResult: TotalCaptureResult? = null
+
+    private val previewCaptureCallback = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            result: TotalCaptureResult
+        ) {
+            lastCaptureResult = result
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateRendererRotation()
+
+        glSurfaceView.requestLayout()
+        
+        runOnUiThread {
+            findViewById<LinearLayout>(R.id.topBarLayout)?.bringToFront()
+            findViewById<LinearLayout>(R.id.bottomControls)?.bringToFront()
+        }
+    }
+
+    private fun updateRendererRotation() {
+        val rotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display?.rotation ?: Surface.ROTATION_0
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
+        }
+        
+        val degrees = when (rotation) {
+            Surface.ROTATION_0 -> 0
+            Surface.ROTATION_90 -> 90
+            Surface.ROTATION_180 -> 180
+            Surface.ROTATION_270 -> 270
+            else -> 0
+        }
+        
+        gpuRenderer?.screenRotation = degrees
+        Log.d(TAG, "Renderer rotation updated: $degrees degrees")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -165,10 +241,13 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_main)
 
+        imageSaver = ImageSaver(this)
         initializeViews()
         initializeAdvancedEditing()
+        initializeAdditionalComponents()
+        updateGalleryThumbnail()
         
-        // Asegurar que los contenedores de controles estén al frente de todo
+        updateRendererRotation()
         findViewById<LinearLayout>(R.id.topBarLayout)?.bringToFront()
         findViewById<HorizontalScrollView>(R.id.filterButtonsScroll)?.bringToFront()
         findViewById<LinearLayout>(R.id.bottomControls)?.bringToFront()
@@ -235,11 +314,7 @@ class MainActivity : AppCompatActivity() {
 
         // Gallery / Open Edit
         btnGallery.setOnClickListener {
-            lastCapturedFile?.let {
-                openEditingMode(it)
-            } ?: run {
-                Toast.makeText(this, "Toma una foto primero", Toast.LENGTH_SHORT).show()
-            }
+            showGalleryBottomSheet()
         }
 
         // Modos
@@ -384,10 +459,7 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "GLSurfaceView surface ready")
                 previewSurface = surface
                 isCameraReady = true
-                // Only open camera if activity is resumed and permissions are granted
-                // AND this is the first time the surface is ready OR activity just resumed
                 if (isActivityResumed && availableCameras.isNotEmpty() && cameraDevice == null) {
-                    Log.d(TAG, "Opening camera from surface ready callback")
                     openCamera(currentCameraId)
                 }
             }
@@ -399,6 +471,7 @@ class MainActivity : AppCompatActivity() {
         glSurfaceView.setEGLContextClientVersion(2)
         glSurfaceView.setRenderer(gpuRenderer!!)
         glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+        glSurfaceView.preserveEGLContextOnPause = true // Mantener contexto para evitar parpadeos
 
         // Force layout update
         glSurfaceView.requestLayout()
@@ -622,35 +695,39 @@ class MainActivity : AppCompatActivity() {
         val cameras = mutableListOf<CameraInfo>()
 
         try {
-            for (cameraId in cameraManager.cameraIdList) {
+            val cameraIds = cameraManager.cameraIdList
+            Log.d(TAG, "Cámaras detectadas por el sistema: ${cameraIds.joinToString()}")
+
+            for (cameraId in cameraIds) {
                 val characteristics = cameraManager.getCameraCharacteristics(cameraId)
                 val lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING)
                 val focalLengths = characteristics.get(
                     CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS
                 ) ?: floatArrayOf(0f)
 
+                // Identificación más precisa para Xiaomi y otros multicanal
                 val type = when {
                     lensFacing == CameraCharacteristics.LENS_FACING_FRONT -> CameraType.FRONT
-                    focalLengths.any { it < 2.0f } -> CameraType.ULTRA_WIDE
-                    focalLengths.any { it > 4.5f } -> CameraType.TELEPHOTO
+                    cameraId == "0" -> CameraType.MAIN
+                    focalLengths.any { it < 2.5f } -> CameraType.ULTRA_WIDE
+                    focalLengths.any { it > 5.0f } -> CameraType.TELEPHOTO
                     else -> CameraType.MAIN
                 }
 
-                cameras.add(
-                    CameraInfo(
-                        cameraId = cameraId,
-                        type = type,
-                        lensFacing = lensFacing ?: -1,
-                        focalLengths = focalLengths.toList(),
-                        hasRaw = characteristics.get(
-                            CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES
-                        )?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW)
-                            ?: false
-                    )
+                val info = CameraInfo(
+                    cameraId = cameraId,
+                    type = type,
+                    lensFacing = lensFacing ?: -1,
+                    focalLengths = focalLengths.toList(),
+                    hasRaw = characteristics.get(
+                        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES
+                    )?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW) ?: false
                 )
+                cameras.add(info)
+                Log.d(TAG, "Cámara ID $cameraId: ${info.type} (Focal: ${info.focalLengths})")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error enumerando", e)
+            Log.e(TAG, "Error enumerando cámaras", e)
         }
 
         availableCameras = cameras.sortedBy { it.cameraId }
@@ -889,7 +966,7 @@ class MainActivity : AppCompatActivity() {
 
         hdrCaptureManager = HdrBracketingCapture(device, characteristics, backgroundHandler)
         hdrCaptureManager?.currentFlashMode = currentFlashMode
-        hdrCaptureManager?.setupSession(surface, captureSize)
+        hdrCaptureManager?.setupSession(surface, captureSize, previewCaptureCallback)
         Log.d(TAG, "Modo HDR configurado con éxito")
     }
 
@@ -906,14 +983,7 @@ class MainActivity : AppCompatActivity() {
         imageReader =
             ImageReader.newInstance(captureSize.width, captureSize.height, ImageFormat.JPEG, 5)
                 .apply {
-                    setOnImageAvailableListener({ reader ->
-                        val image = reader.acquireNextImage() ?: return@setOnImageAvailableListener
-                        val buffer = image.planes[0].buffer
-                        val bytes = ByteArray(buffer.remaining())
-                        buffer.get(bytes)
-                        image.close()
-                        processCapturedImage(bytes, device.id)
-                    }, backgroundHandler)
+                    setOnImageAvailableListener(imageReaderListener, backgroundHandler)
                 }
 
         val surface = getPreviewSurface(characteristics) ?: return
@@ -960,14 +1030,7 @@ class MainActivity : AppCompatActivity() {
                     ImageFormat.JPEG,
                     5
                 ).apply {
-                    setOnImageAvailableListener({ reader ->
-                        val image = reader.acquireNextImage() ?: return@setOnImageAvailableListener
-                        val buffer = image.planes[0].buffer
-                        val bytes = ByteArray(buffer.remaining())
-                        buffer.get(bytes)
-                        image.close()
-                        processCapturedImage(bytes, device.id)
-                    }, backgroundHandler)
+                    setOnImageAvailableListener(imageReaderListener, backgroundHandler)
                 }
 
                 val surfaces = listOf(surface, imageReader!!.surface)
@@ -1001,7 +1064,7 @@ class MainActivity : AppCompatActivity() {
                                             }
                                     session.setRepeatingRequest(
                                         requestBuilder.build(),
-                                        null,
+                                        previewCaptureCallback,
                                         backgroundHandler
                                     )
                                     Log.d(TAG, "Preview Auto iniciado con éxito")
@@ -1040,7 +1103,7 @@ class MainActivity : AppCompatActivity() {
                                                 addTarget(surface)
                                                 set(CaptureRequest.FLASH_MODE, currentFlashMode)
                                             }.build()
-                                    session.setRepeatingRequest(request, null, backgroundHandler)
+                                    session.setRepeatingRequest(request, previewCaptureCallback, backgroundHandler)
                                     Log.d(TAG, "Preview Auto (Legacy) iniciado")
                                     if (continuation.isActive) continuation.resume(Unit)
                                 } catch (e: Exception) {
@@ -1081,7 +1144,16 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread { progressBar.visibility = View.VISIBLE }
 
                 withTimeout(20000) { // Timeout de 20 segundos para ráfaga HDR
-                    val images = hdrCaptureManager?.captureHdrBracketing(steps = 5, evStep = 1.2f)
+                    val baseExp = lastCaptureResult?.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: 33333333L
+                    val baseIso = lastCaptureResult?.get(CaptureResult.SENSOR_SENSITIVITY) ?: 400
+
+                    val images = hdrCaptureManager?.captureHdrBracketing(
+                        steps = 5,
+                        evStep = 1.2f,
+                        baseExposure = baseExp,
+                        baseIso = baseIso
+                    )
+
                     if (!images.isNullOrEmpty()) {
                         val merged = hdrCaptureManager?.mergeHdrImages(images)
                         merged?.let { bytes ->
@@ -1107,47 +1179,101 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun captureStandardPhoto() {
-        val device = cameraDevice ?: return
-        val reader = imageReader ?: return
-        val session = captureSession ?: return
-
-        try {
-            val requestBuilder =
-                device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                    addTarget(reader.surface)
-                    set(
-                        CaptureRequest.CONTROL_AF_MODE,
-                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
-                    )
-                    set(CaptureRequest.JPEG_ORIENTATION, getRotationCompensation())
+        lifecycleScope.launch(Dispatchers.Main) {
+            val device = cameraDevice
+            val reader = imageReader
+            
+            cameraOpenCloseLock.withLock {
+                val session = captureSession
+                if (device == null || reader == null || session == null) {
+                    Log.w(TAG, "captureStandardPhoto: Camera resources not ready or session closed")
+                    return@withLock
                 }
 
-            session.capture(
-                requestBuilder.build(),
-                object : CameraCaptureSession.CaptureCallback() {
-                    override fun onCaptureStarted(
-                        session: CameraCaptureSession,
-                        request: CaptureRequest,
-                        timestamp: Long,
-                        frameNumber: Long
-                    ) {
-                        super.onCaptureStarted(session, request, timestamp, frameNumber)
-                        runOnUiThread { progressBar.visibility = View.VISIBLE }
-                    }
+                try {
+                    val requestBuilder =
+                        device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                            addTarget(reader.surface)
+                            set(
+                                CaptureRequest.CONTROL_AF_MODE,
+                                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+                            )
+                            set(CaptureRequest.JPEG_ORIENTATION, getRotationCompensation())
+                            set(CaptureRequest.FLASH_MODE, currentFlashMode)
+                        }
 
-                    override fun onCaptureCompleted(
-                        session: CameraCaptureSession,
-                        request: CaptureRequest,
-                        result: TotalCaptureResult
-                    ) {
-                        super.onCaptureCompleted(session, request, result)
-                        runOnUiThread { progressBar.visibility = View.GONE }
-                    }
-                },
-                backgroundHandler
-            )
+                    session.capture(
+                        requestBuilder.build(),
+                        object : CameraCaptureSession.CaptureCallback() {
+                            override fun onCaptureStarted(
+                                session: CameraCaptureSession,
+                                request: CaptureRequest,
+                                timestamp: Long,
+                                frameNumber: Long
+                            ) {
+                                super.onCaptureStarted(session, request, timestamp, frameNumber)
+                                runOnUiThread { progressBar.visibility = View.VISIBLE }
+                            }
+
+                            override fun onCaptureCompleted(
+                                session: CameraCaptureSession,
+                                request: CaptureRequest,
+                                result: TotalCaptureResult
+                            ) {
+                                super.onCaptureCompleted(session, request, result)
+                                runOnUiThread { progressBar.visibility = View.GONE }
+                            }
+                        },
+                        backgroundHandler
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error en captureStandardPhoto", e)
+                    runOnUiThread { progressBar.visibility = View.GONE }
+                }
+            }
+        }
+    }
+
+    private suspend fun captureStandardPhotoAsBytes(): ByteArray? = suspendCancellableCoroutine { continuation ->
+        val device = cameraDevice
+        val reader = imageReader
+        val session = captureSession
+
+        if (device == null || reader == null || session == null) {
+            if (continuation.isActive) continuation.resume(null)
+            return@suspendCancellableCoroutine
+        }
+
+        reader.setOnImageAvailableListener({ r ->
+            val image = try { r.acquireLatestImage() } catch (e: Exception) { null }
+            if (image != null) {
+                val buffer = image.planes[0].buffer
+                val bytes = ByteArray(buffer.remaining())
+                buffer.get(bytes)
+                image.close()
+                
+                Log.d(TAG, "captureStandardPhotoAsBytes: Captured ${bytes.size} bytes")
+                
+                // Restaurar listener normal
+                r.setOnImageAvailableListener(imageReaderListener, backgroundHandler)
+                
+                if (continuation.isActive) continuation.resume(bytes)
+            } else {
+                Log.e(TAG, "captureStandardPhotoAsBytes: Image was null")
+                if (continuation.isActive) continuation.resume(null)
+            }
+        }, backgroundHandler)
+
+        try {
+            val requestBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                addTarget(reader.surface)
+                set(CaptureRequest.JPEG_ORIENTATION, getRotationCompensation())
+                // Usar flash si está configurado
+                set(CaptureRequest.FLASH_MODE, currentFlashMode)
+            }
+            session.capture(requestBuilder.build(), null, backgroundHandler)
         } catch (e: Exception) {
-            Log.e(TAG, "Error en captureStandardPhoto", e)
+            if (continuation.isActive) continuation.resume(null)
         }
     }
 
@@ -1176,24 +1302,39 @@ class MainActivity : AppCompatActivity() {
         if (isProcessing) return
         isProcessing = true
         progressBar.visibility = View.VISIBLE
+        val prevCameraId = currentCameraId
+        val prevMode = currentMode
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            var count = 0
+        lifecycleScope.launch(Dispatchers.Main) {
+            try {
+                // Cambiar a modo AUTO para asegurar compatibilidad en todas las cámaras
+                currentMode = CameraMode.AUTO
+                
+                var count = 0
+                for (camera in availableCameras) {
+                    Log.d(TAG, "Multi-capture: opening ${camera.cameraId}")
+                    currentCameraId = camera.cameraId
+                    performOpenCamera(camera.cameraId)
+                    
+                    val bytes = captureStandardPhotoAsBytes()
+                    if (bytes != null) {
+                        processCapturedImage(bytes, camera.cameraId)
+                        count++
+                    }
+                    delay(300)
+                }
 
-            for (camera in availableCameras) {
-                Log.d(TAG, "Capturing from camera: ${camera.cameraId}")
-                // Abrir cada cámara y capturar
-                // ... (implementación similar a versión anterior)
-                count++
-                delay(800)
-            }
+                // Restaurar estado original
+                currentCameraId = prevCameraId
+                currentMode = prevMode
+                performOpenCamera(prevCameraId)
 
-            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "Capturadas $count fotos", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error en multi-capture", e)
+            } finally {
                 progressBar.visibility = View.GONE
                 isProcessing = false
-                Toast.makeText(this@MainActivity, "Capturadas $count fotos", Toast.LENGTH_LONG)
-                    .show()
             }
         }
     }
@@ -1226,6 +1367,102 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showGalleryBottomSheet() {
+        Log.d(TAG, "showGalleryBottomSheet called")
+        val dialog = BottomSheetDialog(this)
+        val view = layoutInflater.inflate(R.layout.layout_gallery_sheet, null)
+        
+        val rvGallery = view.findViewById<RecyclerView>(R.id.rvGallery)
+        val images = imageSaver.getSavedImages()
+        
+        if (images.isEmpty()) {
+            Toast.makeText(this, "No hay fotos guardadas", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val adapter = GalleryAdapter(images) { file ->
+            dialog.dismiss()
+            showPhotoViewer(file)
+        }
+        
+        rvGallery.layoutManager = GridLayoutManager(this, 3)
+        rvGallery.adapter = adapter
+        
+        dialog.setContentView(view)
+        dialog.show()
+    }
+
+    private fun showPhotoViewer(file: File) {
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+            .create()
+        val view = layoutInflater.inflate(R.layout.layout_photo_viewer, null)
+        
+        val ivFullPhoto = view.findViewById<ImageView>(R.id.ivFullPhoto)
+        val tvPhotoInfo = view.findViewById<TextView>(R.id.tvPhotoInfo)
+        val btnClose = view.findViewById<View>(R.id.btnCloseViewer)
+        val btnShare = view.findViewById<Button>(R.id.btnShare)
+        val btnEdit = view.findViewById<Button>(R.id.btnEdit)
+        val btnDelete = view.findViewById<Button>(R.id.btnDelete)
+
+        Glide.with(this).load(file).into(ivFullPhoto)
+        
+        val date = Date(file.lastModified())
+        val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+        tvPhotoInfo.text = "${file.name}\n${sdf.format(date)} - ${(file.length() / 1024)} KB"
+
+        btnClose.setOnClickListener { dialog.dismiss() }
+
+        btnShare.setOnClickListener {
+            val uri = imageSaver.getShareUri(file.absolutePath)
+            if (uri != null) {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "image/jpeg"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(intent, "Compartir foto"))
+            } else {
+                Toast.makeText(this, "Error al generar archivo para compartir", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnEdit.setOnClickListener {
+            dialog.dismiss()
+            openEditingMode(file)
+        }
+
+        btnDelete.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Eliminar foto")
+                .setMessage("¿Estás seguro de que quieres eliminar esta foto?")
+                .setPositiveButton("Eliminar") { _, _ ->
+                    if (imageSaver.deleteImage(file.absolutePath)) {
+                        Toast.makeText(this, "Foto eliminada", Toast.LENGTH_SHORT).show()
+                        dialog.dismiss()
+                        updateGalleryThumbnail()
+                    }
+                }
+                .setNegativeButton("Cancelar", null)
+                .show()
+        }
+
+        dialog.setView(view)
+        dialog.show()
+    }
+
+    private fun updateGalleryThumbnail() {
+        val lastImage = imageSaver.getSavedImages().firstOrNull()
+        if (lastImage != null) {
+            Glide.with(this)
+                .load(lastImage)
+                .centerCrop()
+                .circleCrop()
+                .into(btnGallery)
+        } else {
+            btnGallery.setImageResource(android.R.drawable.ic_menu_gallery)
+        }
+    }
+
     private fun saveImage(bytes: ByteArray, fileName: String): File {
         val resolver = contentResolver
         val contentValues = ContentValues().apply {
@@ -1234,7 +1471,7 @@ class MainActivity : AppCompatActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(
                     MediaStore.MediaColumns.RELATIVE_PATH,
-                    Environment.DIRECTORY_PICTURES + "/MiAppCamaraPro"
+                    Environment.DIRECTORY_PICTURES + "/MultiCameraPro"
                 )
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
@@ -1253,21 +1490,27 @@ class MainActivity : AppCompatActivity() {
             }
 
             // También guardamos una copia en el directorio privado para el procesamiento de filtros
-            val directory = getExternalFilesDir(Environment.DIRECTORY_PICTURES)!!
+            val directory = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "MultiCameraPro").apply { mkdirs() }
             val file = File(directory, fileName)
             FileOutputStream(file).use { it.write(bytes) }
 
             runOnUiThread {
-                Toast.makeText(this, "Imagen guardada en Galería", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Imagen guardada", Toast.LENGTH_SHORT).show()
+                updateGalleryThumbnail()
             }
             lastCapturedFile = file
             return file
         }
 
-        val directory = getExternalFilesDir(Environment.DIRECTORY_PICTURES)!!
+        val directory = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "MultiCameraPro").apply { mkdirs() }
         val file = File(directory, fileName)
         FileOutputStream(file).use { it.write(bytes) }
         lastCapturedFile = file
+        
+        runOnUiThread {
+            updateGalleryThumbnail()
+        }
+
         return file
     }
 
@@ -1341,6 +1584,21 @@ class MainActivity : AppCompatActivity() {
 
         btnResetEdits.setOnClickListener {
             adjustmentPanel.resetAll()
+            // Forzar actualización de variables locales para que coincidan con el panel reseteado
+            currentExposure = 0f
+            currentContrast = 0f
+            currentHighlights = 0f
+            currentShadows = 0f
+            currentWhites = 0f
+            currentBlacks = 0f
+            currentTemperature = 0f
+            currentTint = 0f
+            currentVibrance = 0f
+            currentSaturation = 0f
+            currentSharpness = 0f
+            currentClarity = 0f
+            currentDenoise = 0f
+            applyEditingChanges()
         }
 
         btnApplyEdits.setOnClickListener {
@@ -1525,31 +1783,45 @@ class MainActivity : AppCompatActivity() {
     private fun applyAdvancedFilter(type: String) {
         val baseBitmap = currentEditingBitmap ?: return
         
+        // Mostrar feedback visual
+        progressBar.visibility = View.VISIBLE
+        
         lifecycleScope.launch(Dispatchers.Default) {
-            val result = when (type) {
-                "LIGHT_LEAKS" -> {
-                    val processor = LightLeaksProcessor()
-                    val params = LightLeaksProcessor.LightLeakParams(
-                        type = LightLeaksProcessor.LeakType.ORANGE_STREAK,
-                        intensity = 0.8f
-                    )
-                    processor.applyLightLeak(baseBitmap, params)
+            try {
+                val result = when (type) {
+                    "LIGHT_LEAKS" -> {
+                        val processor = LightLeaksProcessor()
+                        val params = LightLeaksProcessor.LightLeakParams(
+                            type = LightLeaksProcessor.LeakType.ORANGE_STREAK,
+                            intensity = 0.7f,
+                            position = LightLeaksProcessor.LeakPosition.TOP_LEFT
+                        )
+                        processor.applyLightLeak(baseBitmap, params)
+                    }
+                    "ANALOG_FILM" -> {
+                        val processor = LightLeaksProcessor()
+                        processor.applyAnalogFilmEffect(baseBitmap, 0.7f)
+                    }
+                    "BOKEH" -> {
+                        advancedFilterProcessor.applyBokeh(baseBitmap, blurRadius = 25f)
+                    }
+                    else -> baseBitmap
                 }
-                "ANALOG_FILM" -> {
-                    val processor = LightLeaksProcessor()
-                    processor.applyAnalogFilmEffect(baseBitmap, 0.8f)
-                }
-                "BOKEH" -> {
-                    advancedFilterProcessor.applyBokeh(baseBitmap, blurRadius = 30f)
-                }
-                else -> baseBitmap
-            }
 
-            withContext(Dispatchers.Main) {
-                // IMPORTANTE: Actualizar el bitmap base de edición para que los ajustes posteriores
-                // (brillo, contraste, etc.) se apliquen SOBRE el filtro especial.
-                currentEditingBitmap = result
-                applyEditingChanges()
+                withContext(Dispatchers.Main) {
+                    // IMPORTANTE: Actualizar el bitmap base de edición para que los ajustes posteriores
+                    // (brillo, contraste, etc.) se apliquen SOBRE el filtro especial.
+                    currentEditingBitmap = result
+                    applyEditingChanges()
+                    progressBar.visibility = View.GONE
+                    Toast.makeText(this@MainActivity, "Efecto aplicado", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error aplicando filtro avanzado", e)
+                withContext(Dispatchers.Main) {
+                    progressBar.visibility = View.GONE
+                    Toast.makeText(this@MainActivity, "Error al aplicar efecto", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -1611,6 +1883,9 @@ class MainActivity : AppCompatActivity() {
 
                     hdrCaptureManager?.release()
                     hdrCaptureManager = null
+
+                    timeLapseManager?.stopTimeLapse()
+                    timeLapseManager = null
 
                     manualController?.release()
                     manualController = null
@@ -1676,5 +1951,315 @@ class MainActivity : AppCompatActivity() {
     )
 
     enum class CameraType { MAIN, ULTRA_WIDE, TELEPHOTO, FRONT }
-}
 
+    private fun enterEditingMode(bitmap: Bitmap) {
+        currentEditingBitmap = bitmap
+        editingPreview.setImageBitmap(bitmap)
+        advancedEditingPanel.visibility = View.VISIBLE
+        advancedEditingPanel.bringToFront()
+        applyEditingChanges()
+    }
+
+    private fun initializeAdditionalComponents() {
+        collageManager = CollageGridManager()
+
+        btnTimeLapse = findViewById(R.id.btnTimeLapse)
+        btnAstro = findViewById(R.id.btnAstro)
+        btnCollage = findViewById(R.id.btnCollage)
+
+        btnTimeLapse.setOnClickListener { showTimeLapseDialog() }
+        btnAstro.setOnClickListener { showAstroDialog() }
+        btnCollage.setOnClickListener { showCollageDialog() }
+    }
+
+    // ==================== TIME-LAPSE ====================
+    private fun showTimeLapseDialog() {
+        val configs = arrayOf("1s intervalo - 1min", "2s intervalo - 5min", "5s intervalo - 10min", "Custom")
+
+        AlertDialog.Builder(this)
+            .setTitle("Time-Lapse")
+            .setItems(configs) { _, which ->
+                val config = when (which) {
+                    0 -> TimeLapseManager.TimeLapseConfig(intervalMs = 1000, durationMinutes = 1)
+                    1 -> TimeLapseManager.TimeLapseConfig(intervalMs = 2000, durationMinutes = 5)
+                    2 -> TimeLapseManager.TimeLapseConfig(intervalMs = 5000, durationMinutes = 10)
+                    else -> showCustomTimeLapseConfig()
+                }
+                startTimeLapse(config)
+            }
+            .show()
+    }
+
+    private fun startTimeLapse(config: TimeLapseManager.TimeLapseConfig) {
+        val device = cameraDevice ?: return
+
+        timeLapseManager = TimeLapseManager(device, backgroundHandler)
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            timeLapseManager?.startTimeLapse(
+                previewSurface = previewSurface!!,
+                config = config,
+                onProgress = { current, total ->
+                    runOnUiThread {
+                        tvCameraInfo.text = "Time-lapse: $current/$total"
+                    }
+                },
+                onFrameCaptured = { bitmap ->
+                    // Opcional: mostrar preview del frame
+                },
+                onComplete = { frames ->
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        // Generar archivo temporal
+                        val tempFile = File(cacheDir, "temp_timelapse.mp4")
+
+                        val success = timeLapseManager?.generateVideo(frames, tempFile, config) ?: false
+
+                        if (success) {
+                            val fileName = "timelapse_${System.currentTimeMillis()}.mp4"
+                            val resolver = contentResolver
+                            val contentValues = ContentValues().apply {
+                                put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
+                                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/MultiCameraPro")
+                                    put(MediaStore.Video.Media.IS_PENDING, 1)
+                                }
+                            }
+
+                            val videoUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+                            
+                            if (videoUri != null) {
+                                resolver.openOutputStream(videoUri)?.use { outputStream ->
+                                    tempFile.inputStream().use { inputStream ->
+                                        inputStream.copyTo(outputStream)
+                                    }
+                                }
+
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    contentValues.clear()
+                                    contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
+                                    resolver.update(videoUri, contentValues, null, null)
+                                }
+                                
+                                // Escanear para versiones antiguas si es necesario
+                                MediaScannerConnection.scanFile(this@MainActivity, arrayOf(videoUri.path), null, null)
+                            }
+                            
+                            tempFile.delete()
+
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Video guardado en Galería: $fileName", Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@MainActivity, "Error al generar video", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    private fun showCustomTimeLapseConfig(): TimeLapseManager.TimeLapseConfig {
+        // Implementar diálogo custom
+        return TimeLapseManager.TimeLapseConfig()
+    }
+
+    // ==================== ASTROFOTOGRAFÍA ====================
+    private fun showAstroDialog() {
+        val device = cameraDevice ?: return
+        val characteristics = cameraManager.getCameraCharacteristics(currentCameraId)
+
+        astroManager = AstrophotographyManager(device, characteristics, backgroundHandler)
+
+        val hwLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+        val range = characteristics.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
+        Log.d(TAG, "Astro Check - Camera: $currentCameraId, HW Level: $hwLevel, Range: ${range?.lower}..${range?.upper}")
+
+        if (!astroManager!!.isLongExposureSupported()) {
+            val msg = "Astro no soportado en esta lente. HW: $hwLevel, Max: ${range?.upper ?: 0 / 1_000_000}ms"
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+            Log.w(TAG, msg)
+            // No bloqueamos el inicio, permitimos que el usuario intente
+            // return 
+        }
+
+        val maxExp = astroManager!!.getMaxExposureMs()
+
+        AlertDialog.Builder(this)
+            .setTitle("Astrofotografía (Beta)")
+            .setMessage("Máxima exposición hardware: ${maxExp / 1000}s\n\nEl sistema capturará 10 fotos y las fusionará para reducir ruido y aumentar brillo.\n\n¿Iniciar captura?")
+            .setPositiveButton("Iniciar") { _, _ ->
+                startAstroCapture()
+            }
+            .setNegativeButton("Configurar") { _, _ ->
+                showAstroConfigDialog()
+            }
+            .setNeutralButton("Cancelar", null)
+            .show()
+    }
+
+    private fun startAstroCapture() {
+        val maxExpSupported = astroManager?.getMaxExposureMs() ?: 1000L
+        val targetExp = minOf(15000L, maxExpSupported)
+        
+        val config = AstrophotographyManager.AstroConfig(
+            exposureTimeMs = targetExp,
+            iso = 3200,
+            stackingCount = 10
+        )
+
+        Log.d(TAG, "Iniciando captura Astro: ${targetExp}ms, Max supported: ${maxExpSupported}ms")
+
+        progressBar.visibility = View.VISIBLE
+        btnAstro.isEnabled = false
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            astroManager?.captureAstroSequence(
+                previewSurface = previewSurface!!,
+                config = config,
+                onProgress = { stage, current, total ->
+                    runOnUiThread {
+                        tvCameraInfo.text = "$stage: $current/$total"
+                    }
+                },
+                onComplete = { result ->
+                    runOnUiThread {
+                        progressBar.visibility = View.GONE
+                        btnAstro.isEnabled = true
+
+                        // Guardar resultado
+                        val fileResult = lifecycleScope.launch(Dispatchers.IO) {
+                            val resultFile = imageSaver.saveToGallery(
+                                result,
+                                fileName = imageSaver.generateFileName("ASTRO"),
+                                quality = 100
+                            )
+
+                            withContext(Dispatchers.Main) {
+                                if (resultFile.success) {
+                                    Toast.makeText(this@MainActivity,
+                                        "Astrofoto guardada!", Toast.LENGTH_LONG).show()
+                                    enterEditingMode(result)
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    private fun showAstroConfigDialog() {
+        // Implementar configuración avanzada
+    }
+
+    // ==================== COLLAGE ====================
+    private fun showCollageDialog() {
+        val layouts = CollageGridManager.LayoutType.values()
+        val names = layouts.map { it.name.replace("_", " ") }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("Layout Collage")
+            .setItems(names) { _, which ->
+                captureCollage(layouts[which])
+            }
+            .show()
+    }
+
+    private fun captureCollage(layout: CollageGridManager.LayoutType) {
+        if (isProcessing) return
+        isProcessing = true
+        progressBar.visibility = View.VISIBLE
+        
+        val prevCameraId = currentCameraId
+        val prevMode = currentMode
+
+        lifecycleScope.launch(Dispatchers.Main) {
+            val images = mutableMapOf<String, Bitmap>()
+            
+            try {
+                // Forzar modo AUTO para capturas de collage
+                currentMode = CameraMode.AUTO
+                
+                // Usar las cámaras disponibles (Xiaomi 12 suele tener 0, 1, 2, 3)
+                if (availableCameras.isEmpty()) {
+                    enumerateCameras()
+                }
+
+                for (camera in availableCameras) {
+                    Log.d(TAG, "Collage capture: opening camera ${camera.cameraId}")
+                    currentCameraId = camera.cameraId
+                    performOpenCamera(camera.cameraId)
+                    
+                    // Esperar un poco a que el sensor se estabilice tras abrir
+                    delay(500)
+                    
+                    val bytes = captureStandardPhotoAsBytes()
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        if (bitmap != null) {
+                            images[camera.cameraId] = bitmap
+                            Log.d(TAG, "Captured image for camera ${camera.cameraId}, size: ${bitmap.width}x${bitmap.height}")
+                        } else {
+                            Log.e(TAG, "Failed to decode bitmap for camera ${camera.cameraId}")
+                        }
+                    } else {
+                        Log.e(TAG, "No bytes captured for camera ${camera.cameraId}")
+                    }
+                    delay(200)
+                }
+
+                // Restaurar cámara original
+                currentCameraId = prevCameraId
+                currentMode = prevMode
+                performOpenCamera(prevCameraId)
+
+                if (images.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "No se capturaron imágenes", Toast.LENGTH_SHORT).show()
+                    return@launch
+                } else {
+                    Toast.makeText(this@MainActivity, "Capturadas ${images.size} imágenes para el collage", Toast.LENGTH_SHORT).show()
+                }
+
+                // Crear collage
+                val collage = withContext(Dispatchers.Default) {
+                    collageManager.createCollage(
+                        images = images,
+                        layout = layout,
+                        outputWidth = 2160,
+                        outputHeight = 2160,
+                        borderWidth = 15,
+                        borderColor = Color.WHITE,
+                        cornerRadius = 20f
+                    )
+                }
+
+                // Guardar resultado
+                val resultFile = imageSaver.saveToGallery(
+                    collage.bitmap,
+                    fileName = imageSaver.generateFileName("COLLAGE"),
+                    quality = 95
+                )
+
+                if (resultFile.success) {
+                    Toast.makeText(this@MainActivity, "Collage guardado!", Toast.LENGTH_SHORT).show()
+                    enterEditingMode(collage.bitmap)
+                } else {
+                    Toast.makeText(this@MainActivity, "Error guardando collage: ${resultFile.error}", Toast.LENGTH_SHORT).show()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creando collage", e)
+                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                progressBar.visibility = View.GONE
+                isProcessing = false
+            }
+        }
+    }
+}

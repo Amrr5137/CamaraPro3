@@ -301,18 +301,25 @@ class FilterProcessor() {
         val height = base.height
         val result = createBitmap(width, height)
 
-        for (x in 0 until width) {
-            for (y in 0 until height) {
-                val basePixel = base[x, y]
-                val blendPixel = blend[x, y]
+        val basePixels = IntArray(width * height)
+        val blendPixels = IntArray(width * height)
+        val resultPixels = IntArray(width * height)
 
-                val r = colorDodge(Color.red(basePixel), Color.red(blendPixel))
-                val g = colorDodge(Color.green(basePixel), Color.green(blendPixel))
-                val b = colorDodge(Color.blue(basePixel), Color.blue(blendPixel))
+        base.getPixels(basePixels, 0, width, 0, 0, width, height)
+        blend.getPixels(blendPixels, 0, width, 0, 0, width, height)
 
-                result[x, y] = Color.rgb(r, g, b)
-            }
+        for (i in basePixels.indices) {
+            val bp = basePixels[i]
+            val lp = blendPixels[i]
+
+            val r = colorDodge(Color.red(bp), Color.red(lp))
+            val g = colorDodge(Color.green(bp), Color.green(lp))
+            val b = colorDodge(Color.blue(bp), Color.blue(lp))
+
+            resultPixels[i] = Color.rgb(r, g, b)
         }
+
+        result.setPixels(resultPixels, 0, width, 0, 0, width, height)
         return result
     }
 
